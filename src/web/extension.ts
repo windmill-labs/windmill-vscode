@@ -160,7 +160,7 @@ function getWebviewContent(remote: string, token: string, workspace: string) {
         document.getElementById('iframe')?.contentWindow?.postMessage(message, '*');
     });
   </script>
-	  <iframe id="iframe" src="${remote}scripts/dev?wm_token=${token}workspace=${workspace}w width="100%" style="border: none; height: 100vh; background-color: white"></iframe>
+	  <iframe id="iframe" src="${remote}scripts/dev?wm_token=${token}&workspace=${workspace}" width="100%" style="border: none; height: 100vh; background-color: white"></iframe>
   </body>
   </html>`;
 }
