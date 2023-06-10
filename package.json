@@ -1,17 +1,25 @@
 {
   "name": "windmill",
+  "author": {
+    "name": "Windmill Labs",
+    "email": "ruben@windmill.dev"
+  },
   "displayName": "windmill",
-  "description": "Companion for the open-source developer platform Windmill",
+  "description": "Local Dev Companion for the open-source developer platform Windmill",
   "repository": {
     "type": "git",
     "url": "https://github.com/windmill-labs/windmill-vscode.git"
   },
+  "icon": "windmill.png",
   "publisher": "windmill-labs",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "engines": {
     "vscode": "^1.79.0"
   },
   "categories": [
+    "low-code",
+    "infra",
+    "cloud",
     "Other"
   ],
   "activationEvents": [],
