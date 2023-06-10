@@ -6,7 +6,8 @@
     "type": "git",
     "url": "https://github.com/windmill-labs/windmill-vscode.git"
   },
-  "version": "0.0.1",
+  "publisher": "windmill-labs",
+  "version": "0.0.2",
   "engines": {
     "vscode": "^1.79.0"
   },
@@ -44,7 +45,7 @@
       "properties": {
         "windmill.remote": {
           "type": "string",
-          "default": "https://app.windmill.dev",
+          "default": "https://app.windmill.dev/",
           "description": "The full remote url including http and trailing slash"
         },
         "windmill.workspaceId": {
