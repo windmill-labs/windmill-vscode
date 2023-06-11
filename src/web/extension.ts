@@ -236,8 +236,6 @@ export function activate(context: vscode.ExtensionContext) {
       start();
     })
   );
-
-  start();
 }
 
 // This method is called when your extension is deactivated
