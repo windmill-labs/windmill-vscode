@@ -1,28 +1,34 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from "vscode";
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-  // Use the console to output diagnostic information (console.log) and errors (console.error)
-  // This line of code will only be executed once when your extension is activated
-  console.log('Congratulations, your extension "windmill" is now active!');
-
-  // const workspaceRoot =
-  //   vscode.workspace.workspaceFolders &&
-  //   vscode.workspace.workspaceFolders.length > 0
-  //     ? vscode.workspace.workspaceFolders[0].uri.fsPath
-  //     : undefined;
-  // if (!workspaceRoot) {
-  //   return;
-  // }
+  console.log("Windmill extension is now active");
 
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
+  let myStatusBarItem: vscode.StatusBarItem | undefined = undefined;
+  const switchRemoteId = "windmill.switchWorkspace";
 
-  vscode.window.onDidChangeActiveTextEditor((editor) => refreshPanel(editor));
-  vscode.workspace.onDidChangeTextDocument((event) =>
-    refreshPanel(vscode.window.activeTextEditor)
+  // create a new status bar item that we can now manage
+  myStatusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    100
+  );
+  myStatusBarItem.command = switchRemoteId;
+  context.subscriptions.push(myStatusBarItem);
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => refreshPanel(editor))
+  );
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument((event) =>
+      refreshPanel(vscode.window.activeTextEditor)
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(setWorkspaceStatus)
+  );
+  context.subscriptions.push(
+    vscode.window.onDidChangeTextEditorSelection(setWorkspaceStatus)
   );
 
   function refreshPanel(editor: vscode.TextEditor | undefined) {
@@ -42,15 +48,20 @@ export function activate(context: vscode.ExtensionContext) {
         ? "deno"
         : ext === "go"
         ? "go"
-        : "bash";
+        : ext === "sh"
+        ? "bash"
+        : undefined;
 
-    const message = {
-      content: editor?.document.getText(),
-      path: wmPath,
-      language: lang,
-    };
+    if (lang) {
+      const message = {
+        content: editor?.document.getText(),
+        path: wmPath,
+        language: lang,
+      };
 
-    currentPanel?.webview.postMessage(message);
+      currentPanel?.webview.postMessage(message);
+    }
+    setWorkspaceStatus();
   }
 
   context.subscriptions.push(
@@ -71,6 +82,105 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand("windmill.addWorkspace", () => {
+      vscode.window
+        .showInputBox({
+          prompt: "Enter the remote URL",
+          placeHolder: "https://app.windmill.dev/",
+        })
+        .then((remote) => {
+          vscode.window
+            .showInputBox({
+              prompt: "Enter workspace id",
+              placeHolder: "demo",
+            })
+            .then((workspaceId) => {
+              vscode.window
+                .showInputBox({
+                  prompt: "Enter user token",
+                })
+                .then(async (token) => {
+                  const conf = vscode.workspace.getConfiguration("windmill");
+                  if (conf.get("token") === "" || !conf.get("token")) {
+                    await conf.update("remote", remote, true);
+                    await conf.update("token", token, true);
+                    await conf.update("workspaceId", workspaceId, true);
+                    if (currentPanel) {
+                      currentPanel.webview.html = getWebviewContent();
+                    }
+                    refreshPanel(vscode.window.activeTextEditor);
+                  } else {
+                    vscode.window
+                      .showInputBox({
+                        prompt: "Enter workspace name",
+                      })
+                      .then(async (name) => {
+                        const remotes = conf.get(
+                          "additionalWorkspaces"
+                        ) as string[];
+
+                        await conf.update(
+                          "additionalWorkspaces",
+                          [
+                            ...(remotes || []),
+                            { name, token, workspaceId, remote },
+                          ],
+                          true
+                        );
+                        await conf.update("currentWorkspace", name, true);
+                        if (currentPanel) {
+                          currentPanel.webview.html = getWebviewContent();
+                        }
+                        refreshPanel(vscode.window.activeTextEditor);
+                      });
+                  }
+                });
+            });
+        });
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(switchRemoteId, () => {
+      const remotes = (
+        (vscode.workspace
+          .getConfiguration("windmill")
+          .get("additionalWorkspaces") as any[]) ?? []
+      ).map((r: any) => r.name);
+      vscode.window
+        .showQuickPick(["main", ...remotes, "Add a remote"], {
+          canPickMany: false,
+        })
+        .then(async (value) => {
+          if (value === "Add a remote") {
+            vscode.commands.executeCommand("windmill.addWorkspace");
+            return;
+          } else {
+            await vscode.workspace
+              .getConfiguration("windmill")
+              .update("currentWorkspace", value, true);
+            if (currentPanel) {
+              currentPanel.webview.html = getWebviewContent();
+            }
+            refreshPanel(vscode.window.activeTextEditor);
+          }
+        });
+    })
+  );
+
+  function setWorkspaceStatus() {
+    if (myStatusBarItem) {
+      const currentWorkspace =
+        vscode.workspace
+          .getConfiguration("windmill")
+          ?.get("currentWorkspace") ?? "main";
+
+      myStatusBarItem.text = `WM: ${currentWorkspace}`;
+      myStatusBarItem.show();
+    }
+  }
+
   function start() {
     const tokenConf = vscode.workspace
       .getConfiguration("windmill")
@@ -83,6 +193,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     if (currentPanel) {
+      currentPanel.webview.html = getWebviewContent();
       currentPanel.reveal(vscode.ViewColumn.Two);
     } else {
       // Create and show a new webview
@@ -94,12 +205,9 @@ export function activate(context: vscode.ExtensionContext) {
           enableScripts: true,
         } // Webview options. More on these later.
       );
-      const conf = vscode.workspace.getConfiguration("windmill");
-      const token = conf.get("token") as string;
-      const workspace = conf.get("workspaceId") as string;
-      const remote = conf.get("remote") as string;
 
-      currentPanel.webview.html = getWebviewContent(remote, token, workspace);
+      currentPanel.title = "Windmill";
+      currentPanel.webview.html = getWebviewContent();
       vscode.window.activeTextEditor &&
         refreshPanel(vscode.window.activeTextEditor);
       currentPanel.onDidDispose(
@@ -110,40 +218,70 @@ export function activate(context: vscode.ExtensionContext) {
         context.subscriptions
       );
     }
+    refreshPanel(vscode.window.activeTextEditor);
+    // refresh every 5 seconds 3 times to make sure it's initialized
+    setTimeout(() => {
+      refreshPanel(vscode.window.activeTextEditor);
+    }, 5000);
+    setTimeout(() => {
+      refreshPanel(vscode.window.activeTextEditor);
+    }, 10000);
+    setTimeout(() => {
+      refreshPanel(vscode.window.activeTextEditor);
+    }, 15000);
   }
+
   context.subscriptions.push(
     vscode.commands.registerCommand("windmill.start", () => {
       start();
     })
   );
+
+  start();
 }
 
-//   const shellExec = new vscode.ShellExecution("wmill dev");
-//   shellExec
-//   context.subscriptions.push(shellExec)
-//   let customTaskProvider = vscode.tasks.registerTaskProvider("wmilldev", {
-//     provideTasks: async (token) => {
-//       const task = new vscode.Task(
-//         { type: "wmilldev" },
-//         vscode.TaskScope.Workspace,
-//         "Windmill Local Dev",
-//         "wmilldev",
-//         new vscode.ShellExecution("wmill dev"),
-//         []
-//       );
-//       return [task];
-//     },
-
-//     resolveTask: async (task: vscode.Task) => undefined,
-//   });
-
-//   context.subscriptions.push(customTaskProvider);
-// }
-
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() {
+  console.log("deactivated extension windmill");
+}
 
-function getWebviewContent(remote: string, token: string, workspace: string) {
+function getWebviewContent() {
+  const conf = vscode.workspace.getConfiguration("windmill");
+  const currentWorkspace = conf.get("currentWorkspace") ?? "main";
+  let token: string;
+  let workspace: string;
+  let remoteUrl: string;
+
+  if (
+    currentWorkspace === "main" ||
+    currentWorkspace === "" ||
+    !currentWorkspace
+  ) {
+    token = conf.get("token") as string;
+    workspace = conf.get("workspaceId") as string;
+    remoteUrl = conf.get("remote") as string;
+  } else {
+    const remotes = conf.get("additionalWorkspaces") as any[];
+    const remote = remotes.find((r) => r.name === currentWorkspace);
+    if (!remote) {
+      return `<!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Windmill</title>
+      </head>
+    
+      <body>
+        Invalid remote: ${currentWorkspace} not found among the additionalRemotees
+      </body>
+      </html>`;
+    }
+    token = remote.token;
+    workspace = remote.workspaceId;
+    remoteUrl = remote.remote;
+  }
+
   return `<!DOCTYPE html>
   <html lang="en">
   <head>
@@ -160,7 +298,7 @@ function getWebviewContent(remote: string, token: string, workspace: string) {
         document.getElementById('iframe')?.contentWindow?.postMessage(message, '*');
     });
   </script>
-	  <iframe id="iframe" src="${remote}scripts/dev?wm_token=${token}&workspace=${workspace}" width="100%" style="border: none; height: 100vh; background-color: white"></iframe>
+      <iframe id="iframe" src="${remoteUrl}scripts/dev?wm_token=${token}&workspace=${workspace}" width="100%" style="border: none; height: 100vh; background-color: white"></iframe>
   </body>
   </html>`;
 }

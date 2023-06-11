@@ -12,17 +12,18 @@
   },
   "icon": "windmill.png",
   "publisher": "windmill-labs",
-  "version": "0.0.4",
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.79.0"
   },
   "categories": [
-    "low-code",
-    "infra",
-    "cloud",
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "workspaceContains:.wmillignore",
+    "workspaceContains:.wmill",
+    "workspaceContains:f/**"
+  ],
   "browser": "./dist/web/extension.js",
   "contributes": {
     "commands": [
@@ -39,6 +40,16 @@
       {
         "command": "windmill.setupConfiguration",
         "title": "Configure remote, workspace and token",
+        "category": "Windmill"
+      },
+      {
+        "command": "windmill.switchWorkspace",
+        "title": "Switch  windmill workspace",
+        "category": "Windmill"
+      },
+      {
+        "command": "windmill.addWorkspace",
+        "title": "add a windmill workspace",
         "category": "Windmill"
       }
     ],
@@ -58,17 +69,56 @@
         "windmill.remote": {
           "type": "string",
           "default": "https://app.windmill.dev/",
-          "description": "The full remote url including http and trailing slash"
+          "description": "The full remote url including http and trailing slash",
+          "order": 0
         },
         "windmill.workspaceId": {
           "type": "string",
           "default": null,
-          "description": "The workspace id to use"
+          "description": "The workspace id to use",
+          "order": 1
         },
         "windmill.token": {
           "type": "string",
           "default": null,
-          "description": "The user token to use"
+          "description": "The user token to use",
+          "order": 2
+        },
+        "windmill.additionalWorkspaces": {
+          "order": 3,
+          "type": "array",
+          "description": "The list of addutional remotes to use",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "The name of the remote",
+                "default": null
+              },
+              "remote": {
+                "type": "string",
+                "default": "https://app.windmill.dev/",
+                "description": "The full remote url including http and trailing slash"
+              },
+              "workspaceId": {
+                "type": "string",
+                "default": null,
+                "description": "The workspace id to use for that remote"
+              },
+              "token": {
+                "type": "string",
+                "default": null,
+                "description": "The user token to use for that remote"
+              }
+            }
+          }
+        },
+        "windmill.currentWorkspace": {
+          "type": "string",
+          "description": "The workspace name currently used (if multiple). `main` or empty is the default one",
+          "default": "main",
+          "order": 4
         }
       }
     }
