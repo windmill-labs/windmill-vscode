@@ -9,5 +9,6 @@ development
 
 ![image](https://github.com/windmill-labs/windmill-vscode/assets/275584/5c6137bf-c56d-46e5-ba72-2fd5806ce0dc)
 
-https://github.com/windmill-labs/windmill-vscode/assets/275584/ac2f5f66-b5bc-49e9-814a-ff9b329fe733
+
+https://github.com/windmill-labs/windmill-vscode/assets/275584/51a9f4c1-5750-4514-a63f-d165259eb10c
 
