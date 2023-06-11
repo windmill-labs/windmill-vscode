@@ -1,9 +1,7 @@
 # windmill
 
-![Windmill](./windmill.png)
-
-Companion of the OSS developer platform windmill.dev to allow for local
-development
+Companion of the OSS developer platform windmill.dev for local development and
+editing of scripts including flow's inline scripts using VSCode.
 
 [Install it](https://marketplace.visualstudio.com/items?itemName=windmill-labs.windmill)
 
