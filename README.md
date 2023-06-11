@@ -7,4 +7,6 @@ development
 
 [Install it](https://marketplace.visualstudio.com/items?itemName=windmill-labs.windmill)
 
-https://raw.githubusercontent.com/windmill-labs/windmill-vscode/main/demo.mp4
+
+https://github.com/windmill-labs/windmill-vscode/assets/275584/fe9877f4-6258-489a-9bb7-08fb18e7e582
+
