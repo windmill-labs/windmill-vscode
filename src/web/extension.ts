@@ -65,9 +65,9 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.runPreview", () => {
+    vscode.commands.registerCommand("windmill.runPreview", async () => {
       if (currentPanel === undefined) {
-        start();
+        await start();
       }
       currentPanel?.webview.postMessage({ type: "runTest" });
     })
@@ -181,15 +181,19 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }
 
-  function start() {
+  async function start() {
     const tokenConf = vscode.workspace
       .getConfiguration("windmill")
       .get("token") as string;
     if (tokenConf === "" || !tokenConf) {
-      vscode.commands.executeCommand(
+      await vscode.commands.executeCommand(
         "workbench.action.openSettings",
         "windmill"
       );
+      vscode.window.showInformationMessage(
+        "Configure your token (fetch from your account settings) and workspace first (the workspace id, not the name)"
+      );
+      return;
     }
 
     if (currentPanel) {
