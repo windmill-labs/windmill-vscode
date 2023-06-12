@@ -29,12 +29,12 @@
     "commands": [
       {
         "command": "windmill.start",
-        "title": "Start Local Windmill Dev",
+        "title": "Show Preview",
         "category": "Windmill"
       },
       {
         "command": "windmill.runPreview",
-        "title": "Run preview with the current active editor",
+        "title": "Run preview",
         "category": "Windmill"
       },
       {
@@ -44,7 +44,7 @@
       },
       {
         "command": "windmill.switchWorkspace",
-        "title": "Switch  windmill workspace",
+        "title": "Switch windmill workspace",
         "category": "Windmill"
       },
       {
@@ -53,6 +53,15 @@
         "category": "Windmill"
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "when": "resourceLangId == javascript || resourceLangId == typescript || resourceLangId == python || resourceLangId == bash",
+          "command": "windmill.start",
+          "group": "navigation"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "windmill.runPreview",
