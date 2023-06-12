@@ -16,12 +16,14 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(myStatusBarItem);
 
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor((editor) => refreshPanel(editor))
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      refreshPanel(editor);
+    })
   );
   context.subscriptions.push(
-    vscode.workspace.onDidChangeTextDocument((event) =>
-      refreshPanel(vscode.window.activeTextEditor)
-    )
+    vscode.workspace.onDidChangeTextDocument((event) => {
+      refreshPanel(vscode.window.activeTextEditor);
+    })
   );
 
   context.subscriptions.push(
@@ -54,6 +56,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     if (lang) {
       const message = {
+        type: "replaceScript",
         content: editor?.document.getText(),
         path: wmPath,
         language: lang,
