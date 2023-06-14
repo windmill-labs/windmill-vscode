@@ -132,7 +132,7 @@ export function activate(context: vscode.ExtensionContext) {
                           ],
                           true
                         );
-                        await conf.update("currentWorkspace", name, true);
+                        await conf.update("currentWorkspace", name);
                         if (currentPanel) {
                           currentPanel.webview.html = getWebviewContent();
                         }
