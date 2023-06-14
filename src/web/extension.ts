@@ -38,8 +38,9 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
     const rootPath = vscode.workspace.getWorkspaceFolder(editor.document.uri)
-      ?.uri.fsPath;
-    const cpath = editor?.document.uri.fsPath.replace(rootPath + "/", "");
+      ?.uri.path;
+
+    const cpath = editor?.document.uri.path.replace(rootPath + "/", "");
     const splitted = cpath.split(".");
     const wmPath = splitted[0];
     const ext = splitted[splitted.length - 1];
