@@ -62,6 +62,8 @@ The extension provides the following settings:
 
 ![demo](./wm-settings.png)
 
+You can create a user token in the Windmill app. Follow the instructions in the [Windmill docs](https://docs.windmill.dev/docs/core_concepts/webhooks#user-token).
+
 ## Usage
 
 1. Setup: After installing the extension, use the Windmill: Configure Remote, Workspace and Token command to setup your Windmill environment.
