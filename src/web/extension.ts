@@ -304,7 +304,7 @@ function getWebviewContent() {
         document.getElementById('iframe')?.contentWindow?.postMessage(message, '*');
     });
   </script>
-      <iframe id="iframe" src="${remoteUrl}scripts/dev?wm_token=${token}&workspace=${workspace}" width="100%" style="border: none; height: 100vh; background-color: white"></iframe>
+      <iframe id="iframe" src="${remoteUrl}scripts/dev?wm_token=${token}&workspace=${workspace}&activeColorTheme=${vscode.window.activeColorTheme.kind}" width="100%" style="border: none; height: 100vh; background-color: white"></iframe>
   </body>
   </html>`;
 }
