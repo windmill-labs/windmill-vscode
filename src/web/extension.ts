@@ -301,7 +301,11 @@ function getWebviewContent() {
     // Handle the message inside the webview
     window.addEventListener('message', event => {
         const message = event.data; 
-        document.getElementById('iframe')?.contentWindow?.postMessage(message, '*');
+        if (event.origin.startsWith('vscode-webview://')) {
+          document.getElementById('iframe')?.contentWindow?.postMessage(message, '*');
+        } else {
+          window.dispatchEvent(new KeyboardEvent('keydown', JSON.parse(message)));
+        }
     });
   </script>
       <iframe id="iframe" src="${remoteUrl}scripts/dev?wm_token=${token}&workspace=${workspace}&activeColorTheme=${vscode.window.activeColorTheme.kind}" width="100%" style="border: none; height: 100vh; background-color: white"></iframe>
