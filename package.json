@@ -12,7 +12,7 @@
   },
   "icon": "windmill.png",
   "publisher": "windmill-labs",
-  "version": "0.1.10",
+  "version": "0.2.4",
   "engines": {
     "vscode": "^1.79.0"
   },
@@ -70,6 +70,10 @@
       {
         "command": "windmill.runPreview",
         "key": "ctrl+enter"
+      },
+      {
+        "command": "windmill.runPreview",
+        "key": "cmd+enter"
       }
     ],
     "configuration": {

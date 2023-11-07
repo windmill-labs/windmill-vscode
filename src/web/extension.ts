@@ -135,7 +135,7 @@ export function activate(context: vscode.ExtensionContext) {
             );
           }
 
-          await replaceInlineScripts(flow.value.modules);
+          await replaceInlineScripts(flow?.value?.modules ?? []);
 
           const message = {
             type: "replaceFlow",
@@ -342,7 +342,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");
             const allExtracted = extractInlineScripts(
-              message.flow.value.modules
+              message?.flow?.value?.modules ?? []
             );
             await Promise.all(
               allExtracted.map(async (s) => {
@@ -381,9 +381,9 @@ export function activate(context: vscode.ExtensionContext) {
               );
             } catch {}
             if (JSON.stringify(message.flow) !== currentFlow) {
-              let text = yaml.dump(message.flow);
-              let splitted = text.split("\n");
+              let splitted = (lastFlowDocument?.getText() ?? "").split("\n");
               let edit = new vscode.WorkspaceEdit();
+              let text = yaml.dump(message.flow);
               edit.replace(
                 lastFlowDocument.uri,
                 new vscode.Range(
@@ -403,6 +403,7 @@ export function activate(context: vscode.ExtensionContext) {
                 let oldFile = f[1][0];
 
                 if (
+                  !oldFile.endsWith("flow.yaml") &&
                   allExtracted.find((s) => s.path === oldFile) === undefined
                 ) {
                   await vscode.workspace.fs.delete(
@@ -475,6 +476,10 @@ function getWebviewContent() {
     token = remote.token;
     workspace = remote.workspaceId;
     remoteUrl = remote.remote;
+  }
+
+  if (!remoteUrl.endsWith("/")) {
+    remoteUrl += "/";
   }
 
   return `<!DOCTYPE html>
