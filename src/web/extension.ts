@@ -1,10 +1,14 @@
 import * as vscode from "vscode";
+import * as yaml from "js-yaml";
+import { extractInlineScripts } from "./flow";
+import { FlowModule, OpenFlow } from "windmill-client";
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("Windmill extension is now active");
 
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
   let myStatusBarItem: vscode.StatusBarItem | undefined = undefined;
+  let channel = vscode.window.createOutputChannel("windmill");
   const switchRemoteId = "windmill.switchWorkspace";
 
   // create a new status bar item that we can now manage
@@ -17,12 +21,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-      refreshPanel(editor);
+      refreshPanel(editor, "changeActiveTextEditor");
     })
   );
+
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
-      refreshPanel(vscode.window.activeTextEditor);
+      refreshPanel(vscode.window.activeTextEditor, "changeTextDocument");
     })
   );
 
@@ -33,38 +38,131 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.onDidChangeTextEditorSelection(setWorkspaceStatus)
   );
 
-  function refreshPanel(editor: vscode.TextEditor | undefined) {
+  let lastActiveEditor: vscode.TextEditor | undefined = undefined;
+  let lastFlowDocument: vscode.TextDocument | undefined = undefined;
+  async function refreshPanel(
+    editor: vscode.TextEditor | undefined,
+    rsn: string
+  ) {
     if (!editor) {
       return;
     }
     const rootPath = vscode.workspace.getWorkspaceFolder(editor.document.uri)
       ?.uri.path;
 
+    if (!editor?.document.uri.path.includes(rootPath || "")) {
+      return;
+    }
+    // channel.appendLine("refreshing panel: " + rsn);
+
+    lastActiveEditor = editor;
+
     const cpath = editor?.document.uri.path.replace(rootPath + "/", "");
     const splitted = cpath.split(".");
     const wmPath = splitted[0];
-    const ext = splitted[splitted.length - 1];
+    const len = splitted.length;
+
+    const ext = splitted[len - 1];
+    const penu = splitted[len - 2];
     const lang =
       ext === "py"
         ? "python3"
         : ext === "ts"
-        ? "deno"
+        ? len > 2 && penu === "fetch"
+          ? "nativets"
+          : len > 2 && penu === "bun"
+          ? "bun"
+          : "deno"
         : ext === "go"
         ? "go"
         : ext === "sh"
         ? "bash"
+        : ext === "gql"
+        ? "graphql"
+        : ext === "ps1"
+        ? "powershell"
+        : ext === "sql"
+        ? len > 2 && penu === "my"
+          ? "mysql"
+          : len > 2 && penu === "bq"
+          ? "bigquery"
+          : len > 2 && penu === "sf"
+          ? "snowflake"
+          : "postgresql"
+        : ext == "yaml"
+        ? penu == "flow/flow"
+          ? "flow"
+          : undefined
         : undefined;
 
     if (lang) {
-      const message = {
-        type: "replaceScript",
-        content: editor?.document.getText(),
-        path: wmPath,
-        language: lang,
-      };
+      try {
+        if (lang == "flow") {
+          let uriPath = editor?.document.uri.toString();
+          let flow = yaml.load(editor?.document.getText()) as OpenFlow;
+          async function replaceInlineScripts(modules: FlowModule[]) {
+            await Promise.all(
+              modules.map(async (m) => {
+                if (m.value.type == "rawscript") {
+                  const path = m.value.content.split(" ")[1];
+                  const fpath =
+                    uriPath.split("/").slice(0, -1).join("/") + "/" + path;
+                  let text = "";
+                  try {
+                    const bytes = await vscode.workspace.fs.readFile(
+                      vscode.Uri.parse(fpath)
+                    );
+                    text = new TextDecoder().decode(bytes);
+                  } catch (e) {}
+                  m.value.content = text;
+                } else if (m.value.type == "forloopflow") {
+                  await replaceInlineScripts(m.value.modules);
+                } else if (m.value.type == "branchall") {
+                  await Promise.all(
+                    m.value.branches.map(
+                      async (b) => await replaceInlineScripts(b.modules)
+                    )
+                  );
+                } else if (m.value.type == "branchone") {
+                  await Promise.all(
+                    m.value.branches.map(
+                      async (b) => await replaceInlineScripts(b.modules)
+                    )
+                  );
+                  await replaceInlineScripts(m.value.default);
+                }
+              })
+            );
+          }
 
-      currentPanel?.webview.postMessage(message);
+          await replaceInlineScripts(flow.value.modules);
+
+          const message = {
+            type: "replaceFlow",
+            flow,
+            uriPath,
+          };
+          lastFlowDocument = editor?.document;
+          currentPanel?.webview.postMessage(message);
+        } else {
+          const message = {
+            type: "replaceScript",
+            content: editor?.document.getText(),
+            path: wmPath,
+            language: lang,
+          };
+
+          currentPanel?.webview.postMessage(message);
+        }
+      } catch (e) {
+        const message = {
+          type: "error",
+          error: e,
+        };
+        currentPanel?.webview.postMessage(message);
+      }
     }
+
     setWorkspaceStatus();
   }
 
@@ -113,7 +211,7 @@ export function activate(context: vscode.ExtensionContext) {
                     if (currentPanel) {
                       currentPanel.webview.html = getWebviewContent();
                     }
-                    refreshPanel(vscode.window.activeTextEditor);
+                    refreshPanel(vscode.window.activeTextEditor, "init");
                   } else {
                     vscode.window
                       .showInputBox({
@@ -136,7 +234,7 @@ export function activate(context: vscode.ExtensionContext) {
                         if (currentPanel) {
                           currentPanel.webview.html = getWebviewContent();
                         }
-                        refreshPanel(vscode.window.activeTextEditor);
+                        refreshPanel(vscode.window.activeTextEditor, "init2");
                       });
                   }
                 });
@@ -167,7 +265,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (currentPanel) {
               currentPanel.webview.html = getWebviewContent();
             }
-            refreshPanel(vscode.window.activeTextEditor);
+            refreshPanel(vscode.window.activeTextEditor, "init 3");
           }
         });
     })
@@ -210,6 +308,7 @@ export function activate(context: vscode.ExtensionContext) {
         "Windmill", // Title of the panel displayed to the user
         vscode.ViewColumn.Two, // Editor column to show the new webview panel in.
         {
+          retainContextWhenHidden: true,
           enableScripts: true,
         } // Webview options. More on these later.
       );
@@ -217,7 +316,7 @@ export function activate(context: vscode.ExtensionContext) {
       currentPanel.title = "Windmill";
       currentPanel.webview.html = getWebviewContent();
       vscode.window.activeTextEditor &&
-        refreshPanel(vscode.window.activeTextEditor);
+        refreshPanel(vscode.window.activeTextEditor, "start");
       currentPanel.onDidDispose(
         () => {
           currentPanel = undefined;
@@ -226,17 +325,100 @@ export function activate(context: vscode.ExtensionContext) {
         context.subscriptions
       );
     }
-    refreshPanel(vscode.window.activeTextEditor);
-    // refresh every 5 seconds 3 times to make sure it's initialized
-    setTimeout(() => {
-      refreshPanel(vscode.window.activeTextEditor);
-    }, 5000);
-    setTimeout(() => {
-      refreshPanel(vscode.window.activeTextEditor);
-    }, 10000);
-    setTimeout(() => {
-      refreshPanel(vscode.window.activeTextEditor);
-    }, 15000);
+    currentPanel.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.type) {
+          case "refresh":
+            channel.appendLine("refreshing");
+            if (lastActiveEditor) {
+              refreshPanel(lastActiveEditor, "refresh message");
+            }
+            return;
+          case "flow":
+            // channel.appendLine("flow message");
+            let uri = vscode.Uri.parse(message.uriPath);
+            if (!message.uriPath.endsWith("flow.yaml")) {
+              return;
+            }
+            let dirPath = uri.toString().split("/").slice(0, -1).join("/");
+            const allExtracted = extractInlineScripts(
+              message.flow.value.modules
+            );
+            await Promise.all(
+              allExtracted.map(async (s) => {
+                let encoded = new TextEncoder().encode(s.content);
+                let inlineUri = vscode.Uri.parse(dirPath + "/" + s.path);
+                let exists = false;
+                try {
+                  await vscode.workspace.fs.stat(inlineUri);
+                  exists = true;
+                } catch (e) {}
+
+                if (
+                  !exists ||
+                  !isArrayEqual(
+                    encoded,
+                    await vscode.workspace.fs.readFile(inlineUri)
+                  )
+                ) {
+                  vscode.workspace.fs.writeFile(
+                    inlineUri,
+                    new TextEncoder().encode(s.content)
+                  );
+                } else {
+                  // channel.appendLine("same content");
+                }
+              })
+            );
+
+            if (!lastFlowDocument) {
+              return;
+            }
+            let currentFlow = "";
+            try {
+              currentFlow = JSON.stringify(
+                yaml.load(lastFlowDocument?.getText() || "")
+              );
+            } catch {}
+            if (JSON.stringify(message.flow) !== currentFlow) {
+              let text = yaml.dump(message.flow);
+              let splitted = text.split("\n");
+              let edit = new vscode.WorkspaceEdit();
+              edit.replace(
+                lastFlowDocument.uri,
+                new vscode.Range(
+                  new vscode.Position(0, 0),
+                  new vscode.Position(
+                    splitted.length,
+                    splitted[splitted.length - 1].length
+                  )
+                ),
+                text
+              );
+              await vscode.workspace.applyEdit(edit);
+              const dir = await vscode.workspace.fs.readDirectory(
+                vscode.Uri.parse(dirPath)
+              );
+              for (const f of dir.entries()) {
+                let oldFile = f[1][0];
+
+                if (
+                  allExtracted.find((s) => s.path === oldFile) === undefined
+                ) {
+                  await vscode.workspace.fs.delete(
+                    vscode.Uri.parse(dirPath + "/" + oldFile)
+                  );
+                }
+              }
+            }
+
+            return;
+        }
+      },
+      undefined,
+      context.subscriptions
+    );
+    refreshPanel(vscode.window.activeTextEditor, "start");
   }
 
   context.subscriptions.push(
@@ -246,6 +428,13 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
+function isArrayEqual(arr1: Uint8Array, arr2: Uint8Array): boolean {
+  if (arr1.length !== arr2.length) {
+    return false;
+  }
+
+  return arr1.every((value, index) => value === arr2[index]);
+}
 // This method is called when your extension is deactivated
 export function deactivate() {
   console.log("deactivated extension windmill");
@@ -297,18 +486,27 @@ function getWebviewContent() {
   </head>
 
   <body>
-  <script>
-    // Handle the message inside the webview
+    <iframe id="iframe" src="${remoteUrl}dev?wm_token=${token}&workspace=${workspace}&activeColorTheme=${vscode.window.activeColorTheme.kind}" width="100%" style="border: none; height: 100vh;"></iframe>
+    <script>
+    const vscode = acquireVsCodeApi();
+    const iframe = document.getElementById('iframe');
+    const h1 = document.getElementById('foo');
+
     window.addEventListener('message', event => {
         const message = event.data; 
         if (event.origin.startsWith('vscode-webview://')) {
-          document.getElementById('iframe')?.contentWindow?.postMessage(message, '*');
+          iframe.contentWindow?.postMessage(message, '*');
         } else {
-          window.dispatchEvent(new KeyboardEvent('keydown', JSON.parse(message)));
+          if (message.type === 'keydown') {
+            window.dispatchEvent(new KeyboardEvent('keydown', JSON.parse(message.key)));
+          } else if (message.type === 'refresh') {
+            vscode.postMessage({ type: 'refresh' });
+          } else if (message.type === 'flow') {
+            vscode.postMessage(message);
+          }
         }
     });
   </script>
-      <iframe id="iframe" src="${remoteUrl}scripts/dev?wm_token=${token}&workspace=${workspace}&activeColorTheme=${vscode.window.activeColorTheme.kind}" width="100%" style="border: none; height: 100vh; background-color: white"></iframe>
   </body>
   </html>`;
 }
