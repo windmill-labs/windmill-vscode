@@ -7,15 +7,19 @@ editing of scripts and flows in VSCode.
 
 ## Quick Start
 
+<a href="https://www.youtube.com/watch?v=aSOF6AzyDr8">
+    <img src="./youtube_thumbnailvscode.png" alt="Watch the video" width="50%">
+</a>
+
 Open the command menu (Ctrl/Cmd+Shift+P) and run:
 
-`> Windmill: Configure workspace, remote and token`
+`> Windmill: Configure remote, workspace and token`
 
 In the settings menu, set the remote url, workspace name and token.
 
 Once done, on any page you'd like to edit, run:
 
-`> Windmill: Run preview in the current editor`
+`> Windmill: Run preview`
 
 The keybidings for that command are: Ctrl+Enter and Shfit+Enter.
 
