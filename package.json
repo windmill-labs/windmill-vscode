@@ -5,7 +5,7 @@
     "email": "ruben@windmill.dev"
   },
   "displayName": "windmill",
-  "description": "Local Dev Companion for the open-source developer platform Windmill",
+  "description": "Local Dev Companion for the open-source developer platform Windmill.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/windmill-labs/windmill-vscode.git"
