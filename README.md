@@ -1,9 +1,11 @@
-# windmill
+# Windmill
 
-Companion of the OSS developer platform windmill.dev for local development and
+Companion of the [OSS](https://github.com/windmill-labs/windmill) developer platform [windmill.dev](https://www.windmill.dev/) for local development and
 editing of scripts and flows in VSCode.
 
 [Install it](https://marketplace.visualstudio.com/items?itemName=windmill-labs.windmill)
+
+[Documentation](https://www.windmill.dev/docs/cli_local_dev/vscode-extension)
 
 ## Quick Start
 
