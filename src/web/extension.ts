@@ -47,7 +47,9 @@ export function activate(context: vscode.ExtensionContext) {
     if (!editor) {
       return;
     }
-    const rootPath = vscode.workspace.getWorkspaceFolder(editor.document.uri)
+    const rootPathFromSettings: string | undefined = vscode.workspace.getConfiguration("windmill")?.get("rootPath");
+
+    const rootPath = rootPathFromSettings ?? vscode.workspace.getWorkspaceFolder(editor.document.uri)
       ?.uri.path;
 
     if (!editor?.document.uri.path.includes(rootPath || "")) {
@@ -467,7 +469,7 @@ function getWebviewContent() {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Windmill</title>
       </head>
-    
+
       <body>
         Invalid remote: ${currentWorkspace} not found among the additionalRemotees
       </body>
@@ -498,7 +500,7 @@ function getWebviewContent() {
     const h1 = document.getElementById('foo');
 
     window.addEventListener('message', event => {
-        const message = event.data; 
+        const message = event.data;
         if (event.origin.startsWith('vscode-webview://')) {
           iframe.contentWindow?.postMessage(message, '*');
         } else {

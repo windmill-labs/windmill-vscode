@@ -100,7 +100,7 @@
         "windmill.additionalWorkspaces": {
           "order": 3,
           "type": "array",
-          "description": "The list of addutional remotes to use",
+          "description": "The list of additional remotes to use",
           "items": {
             "type": "object",
             "properties": {
@@ -126,6 +126,11 @@
               }
             }
           }
+        },
+        "windmill.rootPath": {
+          "type": "string",
+          "description": "Absolute path of the windmill directory your runnables are in (Hint: one directory above your f/ and u/ dirs)",
+          "default": null
         },
         "windmill.currentWorkspace": {
           "type": "string",
