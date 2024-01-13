@@ -6,15 +6,14 @@
     "/windmill/under/windmill-src/f/testing/bar.py" => "/windmill/under/windmill-src"
     "/windmill/free/windmill-src/u/ryan/bar.py" => "/windmill/free/windmill-src"
 */
-export function getRootPathFromRunnablePath(fullPath: string): string {
+export function getRootPathFromRunnablePath(fullPath: string): string | undefined {
     const dirs = ["/u/", "/f/"];
 
     for (const dir of dirs) {
-        if (fullPath.includes(dir)) {
-            fullPath = fullPath.endsWith(dir) ? fullPath.split(dir)[0] : fullPath.split(`${dir}`)[0];
-            break;
+        if (fullPath.includes(dir) || fullPath.endsWith(dir) ) {
+            return fullPath.split(dir)[0];
         }
     }
 
-    return fullPath;
+    return;
 }
