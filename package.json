@@ -100,7 +100,7 @@
         "windmill.additionalWorkspaces": {
           "order": 3,
           "type": "array",
-          "description": "The list of addutional remotes to use",
+          "description": "The list of additional remotes to use",
           "items": {
             "type": "object",
             "properties": {

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as yaml from "js-yaml";
 import { extractInlineScripts } from "./flow";
+import { getRootPathFromRunnablePath } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 
 export function activate(context: vscode.ExtensionContext) {
@@ -47,8 +48,9 @@ export function activate(context: vscode.ExtensionContext) {
     if (!editor) {
       return;
     }
-    const rootPath = vscode.workspace.getWorkspaceFolder(editor.document.uri)
-      ?.uri.path;
+
+    const rootPath = getRootPathFromRunnablePath(editor.document.uri.path) ||
+      vscode.workspace.getWorkspaceFolder(editor.document.uri)?.uri.path;
 
     if (!editor?.document.uri.path.includes(rootPath || "")) {
       return;
@@ -337,7 +339,7 @@ export function activate(context: vscode.ExtensionContext) {
           case "flow":
             // channel.appendLine("flow message");
             let uri = vscode.Uri.parse(message.uriPath);
-            if (!message.uriPath.endsWith("flow.yaml")) {
+            if (!message.uriPath?.endsWith("flow.yaml")) {
               return;
             }
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");
@@ -467,7 +469,7 @@ function getWebviewContent() {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Windmill</title>
       </head>
-    
+
       <body>
         Invalid remote: ${currentWorkspace} not found among the additionalRemotees
       </body>
@@ -498,7 +500,7 @@ function getWebviewContent() {
     const h1 = document.getElementById('foo');
 
     window.addEventListener('message', event => {
-        const message = event.data; 
+        const message = event.data;
         if (event.origin.startsWith('vscode-webview://')) {
           iframe.contentWindow?.postMessage(message, '*');
         } else {
