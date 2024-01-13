@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as yaml from "js-yaml";
 import { extractInlineScripts } from "./flow";
 import { FlowModule, OpenFlow } from "windmill-client";
+import { executeCommand } from "./python_flow";
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("Windmill extension is now active");
@@ -184,6 +185,11 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand("windmill.python", () => {
+      executeCommand("python", "--version");
+    })
+  );
   context.subscriptions.push(
     vscode.commands.registerCommand("windmill.addWorkspace", () => {
       vscode.window
