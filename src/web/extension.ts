@@ -339,7 +339,7 @@ export function activate(context: vscode.ExtensionContext) {
           case "flow":
             // channel.appendLine("flow message");
             let uri = vscode.Uri.parse(message.uriPath);
-            if (!message.uriPath.endsWith("flow.yaml")) {
+            if (!message.uriPath?.endsWith("flow.yaml")) {
               return;
             }
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");
