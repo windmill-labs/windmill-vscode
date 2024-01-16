@@ -60,12 +60,11 @@ describe('determineLanguage', () => {
     expect(helpers.determineLanguage(path)).toBe(expected);
   });
 
-  // FIXME: I noticed that this was behaving unexpectedly in both the original code and the new refactored code.
-  // it('should return "flow" when extension is "yaml" and penu is "flow/flow"', () => {
-  //   const path = 'path/to/flow/file.yaml';
-  //   const expected = 'flow';
-  //   expect(helpers.determineLanguage(path)).toBe(expected);
-  // });
+  it('should return "flow" when extension is "yaml" and penu is "flow/flow"', () => {
+    const path = 'path/to/x.flow/flow.yaml';
+    const expected = 'flow';
+    expect(helpers.determineLanguage(path)).toBe(expected);
+  });
 
   it('should return undefined when extension is "yaml" and penu is not "flow/flow"', () => {
     const path = 'path/to/file.yaml';
