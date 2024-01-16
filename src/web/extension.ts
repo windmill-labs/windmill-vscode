@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as yaml from "js-yaml";
 import { extractInlineScripts } from "./flow";
-import { getRootPathFromRunnablePath } from "./helpers";
+import { getRootPathFromRunnablePath, determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 
 export function activate(context: vscode.ExtensionContext) {
@@ -62,40 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
     const cpath = editor?.document.uri.path.replace(rootPath + "/", "");
     const splitted = cpath.split(".");
     const wmPath = splitted[0];
-    const len = splitted.length;
-
-    const ext = splitted[len - 1];
-    const penu = splitted[len - 2];
-    const lang =
-      ext === "py"
-        ? "python3"
-        : ext === "ts"
-        ? len > 2 && penu === "fetch"
-          ? "nativets"
-          : len > 2 && penu === "bun"
-          ? "bun"
-          : "deno"
-        : ext === "go"
-        ? "go"
-        : ext === "sh"
-        ? "bash"
-        : ext === "gql"
-        ? "graphql"
-        : ext === "ps1"
-        ? "powershell"
-        : ext === "sql"
-        ? len > 2 && penu === "my"
-          ? "mysql"
-          : len > 2 && penu === "bq"
-          ? "bigquery"
-          : len > 2 && penu === "sf"
-          ? "snowflake"
-          : "postgresql"
-        : ext == "yaml"
-        ? penu == "flow/flow"
-          ? "flow"
-          : undefined
-        : undefined;
+    const lang = determineLanguage(cpath);
 
     if (lang) {
       try {
