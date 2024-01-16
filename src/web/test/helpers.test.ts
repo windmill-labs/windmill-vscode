@@ -1,28 +1,25 @@
 import * as helpers from '../helpers';
 
 describe('getRootPathFromRunnablePath', () => {
+  const root = '/root';
   it('should return root path when fullPath includes "/u/"', () => {
     const fullPath = '/root/u/runnable';
-    const expected = '/root';
-    expect(helpers.getRootPathFromRunnablePath(fullPath)).toBe(expected);
+    expect(helpers.getRootPathFromRunnablePath(fullPath)).toBe(root);
   });
 
   it('should return root path when fullPath includes "/f/"', () => {
     const fullPath = '/root/f/runnable';
-    const expected = '/root';
-    expect(helpers.getRootPathFromRunnablePath(fullPath)).toBe(expected);
+    expect(helpers.getRootPathFromRunnablePath(fullPath)).toBe(root);
   });
 
   it('should return root path when fullPath ends with "/u/"', () => {
     const fullPath = '/root/u/';
-    const expected = '/root';
-    expect(helpers.getRootPathFromRunnablePath(fullPath)).toBe(expected);
+    expect(helpers.getRootPathFromRunnablePath(fullPath)).toBe(root);
   });
 
   it('should return root path when fullPath ends with "/f/"', () => {
     const fullPath = '/root/f/';
-    const expected = '/root';
-    expect(helpers.getRootPathFromRunnablePath(fullPath)).toBe(expected);
+    expect(helpers.getRootPathFromRunnablePath(fullPath)).toBe(root);
   });
 
   it('should return undefined when fullPath does not include or end with "/u/" or "/f/"', () => {
