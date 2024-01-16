@@ -17,3 +17,57 @@ export function getRootPathFromRunnablePath(fullPath: string): string | undefine
 
     return;
 }
+
+export function determineLanguage(path: string) {
+  const splitPath = path.split(".");
+  const len = splitPath.length;
+  const ext = splitPath[len - 1];
+  const penu = splitPath[len - 2];
+  switch (ext) {
+    case "py":
+      return "python3";
+    case "ts":
+      return getTypescriptType(len, penu);
+    case "go":
+      return "go";
+    case "sh":
+      return "bash";
+    case "gql":
+      return "graphql";
+    case "ps1":
+      return "powershell";
+    case "sql":
+      return getSqlType(len, penu);
+    case "yaml":
+      return penu === "flow/flow" ? "flow" : undefined;
+    default:
+      return undefined;
+  }
+}
+
+export function getTypescriptType(len: number, penu: string) {
+  if (len > 2) {
+    if (penu === "fetch") {
+      return "nativets";
+    }
+    if (penu === "bun") {
+      return "bun";
+    }
+  }
+  return "deno";
+}
+
+export function getSqlType(len: number, penu: string) {
+  if (len > 2) {
+    if (penu === "my") {
+      return "mysql";
+    }
+    if (penu === "bq") {
+      return "bigquery";
+    }
+    if (penu === "sf") {
+      return "snowflake";
+    }
+  }
+  return "postgresql";
+}
