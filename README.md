@@ -23,7 +23,7 @@ Once done, on any page you'd like to edit, run:
 
 `> Windmill: Run preview`
 
-The keybidings for that command are: Ctrl+Enter and Shfit+Enter.
+The keybindings for that command are: Ctrl+Enter and Shift+Enter.
 
 ![image](https://github.com/windmill-labs/windmill-vscode/assets/275584/5c6137bf-c56d-46e5-ba72-2fd5806ce0dc)
 
