@@ -26,9 +26,12 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  const exts = ["yaml", "ts", "py", "go", "sql", "gql", "ps1", "sh"];
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
-      refreshPanel(vscode.window.activeTextEditor, "changeTextDocument");
+      if (exts.some((ext) => event.document.uri.path.endsWith("." + ext))) {
+        refreshPanel(vscode.window.activeTextEditor, "changeTextDocument");
+      }
     })
   );
 
@@ -41,6 +44,22 @@ export function activate(context: vscode.ExtensionContext) {
 
   let lastActiveEditor: vscode.TextEditor | undefined = undefined;
   let lastFlowDocument: vscode.TextDocument | undefined = undefined;
+  let lastDefaultTs: "deno" | "bun" = "deno";
+
+  async function fileExists(uri: vscode.Uri) {
+    try {
+      await vscode.workspace.fs.stat(uri);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function readTextFromUri(uri: vscode.Uri) {
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    return new TextDecoder().decode(bytes);
+  }
+
   async function refreshPanel(
     editor: vscode.TextEditor | undefined,
     rsn: string
@@ -49,7 +68,8 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    const rootPath = getRootPathFromRunnablePath(editor.document.uri.path) ||
+    const rootPath =
+      getRootPathFromRunnablePath(editor.document.uri.path) ||
       vscode.workspace.getWorkspaceFolder(editor.document.uri)?.uri.path;
 
     if (!editor?.document.uri.path.includes(rootPath || "")) {
@@ -62,7 +82,28 @@ export function activate(context: vscode.ExtensionContext) {
     const cpath = editor?.document.uri.path.replace(rootPath + "/", "");
     const splitted = cpath.split(".");
     const wmPath = splitted[0];
-    const lang = determineLanguage(cpath);
+
+    if (rsn == "changeActiveTextEditor") {
+      let splittedSlash = wmPath.split("/");
+      channel.appendLine("wmPath: " + wmPath + "|" + splittedSlash);
+      for (let i = 0; i < splittedSlash.length; i++) {
+        const path = splittedSlash.slice(0, i).join("/") + "/wmill.yaml";
+        channel.appendLine(
+          "checking if " + path + " exists: " + i + " " + splittedSlash.length
+        );
+        let uriPath = vscode.Uri.parse(rootPath + "/" + path);
+        if (await fileExists(uriPath)) {
+          let content = await readTextFromUri(uriPath);
+          let config = (yaml.load(content) ?? {}) as any;
+          lastDefaultTs = config?.["defaultTs"] ?? "deno";
+          channel.appendLine(path + " exists! defaultTs: " + lastDefaultTs);
+
+          break;
+        }
+      }
+    }
+
+    const lang = determineLanguage(cpath, lastDefaultTs);
 
     if (lang) {
       try {
@@ -78,10 +119,7 @@ export function activate(context: vscode.ExtensionContext) {
                     uriPath.split("/").slice(0, -1).join("/") + "/" + path;
                   let text = "";
                   try {
-                    const bytes = await vscode.workspace.fs.readFile(
-                      vscode.Uri.parse(fpath)
-                    );
-                    text = new TextDecoder().decode(bytes);
+                    text = await readTextFromUri(vscode.Uri.parse(fpath));
                   } catch (e) {}
                   m.value.content = text;
                 } else if (m.value.type == "forloopflow") {
@@ -114,11 +152,21 @@ export function activate(context: vscode.ExtensionContext) {
           lastFlowDocument = editor?.document;
           currentPanel?.webview.postMessage(message);
         } else {
+          let lock: string | undefined = undefined;
+          const uri = vscode.Uri.parse(
+            editor.document.uri.toString().split(".")[0] + ".script.yaml"
+          );
+          if (await fileExists(uri)) {
+            const rd = await readTextFromUri(uri);
+            const config = (yaml.load(rd) as any) ?? {};
+            lock = config?.["lock"];
+          }
           const message = {
             type: "replaceScript",
             content: editor?.document.getText(),
             path: wmPath,
             language: lang,
+            lock,
           };
 
           currentPanel?.webview.postMessage(message);
@@ -317,11 +365,7 @@ export function activate(context: vscode.ExtensionContext) {
               allExtracted.map(async (s) => {
                 let encoded = new TextEncoder().encode(s.content);
                 let inlineUri = vscode.Uri.parse(dirPath + "/" + s.path);
-                let exists = false;
-                try {
-                  await vscode.workspace.fs.stat(inlineUri);
-                  exists = true;
-                } catch (e) {}
+                let exists = await fileExists(inlineUri);
 
                 if (
                   !exists ||

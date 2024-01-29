@@ -12,7 +12,7 @@
   },
   "icon": "windmill.png",
   "publisher": "windmill-labs",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "engines": {
     "vscode": "^1.79.0"
   },
@@ -20,8 +20,8 @@
     "Other"
   ],
   "activationEvents": [
-    "workspaceContains:.wmillignore",
-    "workspaceContains:.wmill",
+    "workspaceContains:wmill.yaml",
+    "workspaceContains:wmill-lock.yaml",
     "workspaceContains:f/**"
   ],
   "browser": "./dist/web/extension.js",
@@ -63,10 +63,6 @@
       ]
     },
     "keybindings": [
-      {
-        "command": "windmill.runPreview",
-        "key": "shift+enter"
-      },
       {
         "command": "windmill.runPreview",
         "key": "ctrl+enter"

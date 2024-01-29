@@ -6,19 +6,24 @@
     "/windmill/under/windmill-src/f/testing/bar.py" => "/windmill/under/windmill-src"
     "/windmill/free/windmill-src/u/ryan/bar.py" => "/windmill/free/windmill-src"
 */
-export function getRootPathFromRunnablePath(fullPath: string): string | undefined {
-    const dirs = ["/u/", "/f/"];
+export function getRootPathFromRunnablePath(
+  fullPath: string
+): string | undefined {
+  const dirs = ["/u/", "/f/"];
 
-    for (const dir of dirs) {
-        if (fullPath.includes(dir) || fullPath.endsWith(dir) ) {
-            return fullPath.split(dir)[0];
-        }
+  for (const dir of dirs) {
+    if (fullPath.includes(dir) || fullPath.endsWith(dir)) {
+      return fullPath.split(dir)[0];
     }
+  }
 
-    return;
+  return;
 }
 
-export function determineLanguage(path: string) {
+export function determineLanguage(
+  path: string,
+  defaultTs: "bun" | "deno" | undefined
+) {
   const splitPath = path.split(".");
   const len = splitPath.length;
   const ext = splitPath[len - 1];
@@ -27,7 +32,7 @@ export function determineLanguage(path: string) {
     case "py":
       return "python3";
     case "ts":
-      return getTypescriptType(len, penu);
+      return getTypescriptType(len, penu, defaultTs);
     case "go":
       return "go";
     case "sh":
@@ -45,16 +50,21 @@ export function determineLanguage(path: string) {
   }
 }
 
-export function getTypescriptType(len: number, penu: string) {
+export function getTypescriptType(
+  len: number,
+  penu: string,
+  defaultTs: "bun" | "deno" | undefined
+) {
   if (len > 2) {
     if (penu === "fetch") {
       return "nativets";
-    }
-    if (penu === "bun") {
+    } else if (penu === "bun") {
       return "bun";
+    } else if (penu === "deno") {
+      return "deno";
     }
   }
-  return "deno";
+  return defaultTs ?? "deno";
 }
 
 export function getSqlType(len: number, penu: string) {
