@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import * as yaml from "js-yaml";
-import { extractInlineScripts } from "./flow";
+import { extraCurrentMapping, extractInlineScripts } from "./flow";
 import { getRootPathFromRunnablePath, determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 
@@ -149,6 +149,7 @@ export function activate(context: vscode.ExtensionContext) {
             flow,
             uriPath,
           };
+
           lastFlowDocument = editor?.document;
           currentPanel?.webview.postMessage(message);
         } else {
@@ -352,14 +353,30 @@ export function activate(context: vscode.ExtensionContext) {
             }
             return;
           case "flow":
+            let currentLoadedFlow: FlowModule[] | undefined = undefined;
+
+            try {
+              currentLoadedFlow = (
+                yaml.load(lastFlowDocument?.getText() || "") as any
+              )?.["value"]?.["modules"] as FlowModule[];
+              if (!Array.isArray(currentLoadedFlow)) {
+                currentLoadedFlow = undefined;
+              }
+            } catch {}
+
             // channel.appendLine("flow message");
             let uri = vscode.Uri.parse(message.uriPath);
             if (!message.uriPath?.endsWith("flow.yaml")) {
               return;
             }
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");
+            let inlineScriptMapping = {};
+            extraCurrentMapping(currentLoadedFlow, inlineScriptMapping);
+
             const allExtracted = extractInlineScripts(
-              message?.flow?.value?.modules ?? []
+              message?.flow?.value?.modules ?? [],
+              undefined,
+              inlineScriptMapping
             );
             await Promise.all(
               allExtracted.map(async (s) => {
@@ -389,9 +406,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
             let currentFlow = "";
             try {
-              currentFlow = JSON.stringify(
-                yaml.load(lastFlowDocument?.getText() || "")
-              );
+              currentFlow = JSON.stringify(currentLoadedFlow);
             } catch {}
             if (JSON.stringify(message.flow) !== currentFlow) {
               let splitted = (lastFlowDocument?.getText() ?? "").split("\n");

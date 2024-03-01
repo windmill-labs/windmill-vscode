@@ -45,7 +45,8 @@ function assignPath(
 
 export function extractInlineScripts(
   modules: FlowModule[],
-  state?: State
+  state?: State,
+  mapping: Record<string, string> = {}
 ): InlineScript[] {
   if (!state) {
     state = {
@@ -56,25 +57,48 @@ export function extractInlineScripts(
 
   return modules.flatMap((m) => {
     if (m.value.type == "rawscript") {
-      const path = assignPath(m.summary, m.value.language, state!);
+      const path =
+        mapping[m.id] ?? assignPath(m.summary, m.value.language, state!);
       const content = m.value.content;
       m.value.content = "!inline " + path;
       return [{ path: path, content: content }];
     } else if (m.value.type == "forloopflow") {
-      return extractInlineScripts(m.value.modules, state);
+      return extractInlineScripts(m.value.modules, state, mapping);
     } else if (m.value.type == "branchall") {
       return m.value.branches.flatMap((b) =>
-        extractInlineScripts(b.modules, state)
+        extractInlineScripts(b.modules, state, mapping)
       );
     } else if (m.value.type == "branchone") {
       return [
         ...m.value.branches.flatMap((b) =>
-          extractInlineScripts(b.modules, state)
+          extractInlineScripts(b.modules, state, mapping)
         ),
-        ...extractInlineScripts(m.value.default, state),
+        ...extractInlineScripts(m.value.default, state, mapping),
       ];
     } else {
       return [];
     }
   });
+}
+
+export function extraCurrentMapping(
+  modules: FlowModule[] | undefined,
+  mapping: Record<string, string>
+) {
+  if (!modules) return;
+  modules.forEach((m) => {
+    if (m.value.type == "rawscript") {
+      if (m.value.content.startsWith("!inline ")) {
+        mapping[m.id] = m.value.content.trim().split(" ")[1];
+      }
+    } else if (m.value.type == "forloopflow") {
+      extraCurrentMapping(m.value.modules, mapping);
+    } else if (m.value.type == "branchall") {
+      m.value.branches.forEach((b) => extraCurrentMapping(b.modules, mapping));
+    } else if (m.value.type == "branchone") {
+      m.value.branches.forEach((b) => extraCurrentMapping(b.modules, mapping)),
+        extraCurrentMapping(m.value.default, mapping);
+    }
+  });
+  return mapping;
 }
