@@ -85,8 +85,13 @@ export function extraCurrentMapping(
   modules: FlowModule[] | undefined,
   mapping: Record<string, string>
 ) {
-  if (!modules) return;
+  if (!modules || !Array.isArray(modules)) {
+    return;
+  }
   modules.forEach((m) => {
+    if (!m?.value?.type) {
+      return;
+    }
     if (m.value.type == "rawscript") {
       if (m.value.content.startsWith("!inline ")) {
         mapping[m.id] = m.value.content.trim().split(" ")[1];
