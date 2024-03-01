@@ -356,11 +356,13 @@ export function activate(context: vscode.ExtensionContext) {
             let currentLoadedFlow: FlowModule[] | undefined = undefined;
 
             try {
-              currentLoadedFlow = (
-                yaml.load(lastFlowDocument?.getText() || "") as any
-              )?.["value"]?.["modules"] as FlowModule[];
-              if (!Array.isArray(currentLoadedFlow)) {
-                currentLoadedFlow = undefined;
+              if (lastFlowDocument) {
+                currentLoadedFlow = (
+                  yaml.load(lastFlowDocument?.getText() || "") as any
+                )?.["value"]?.["modules"] as FlowModule[];
+                if (!Array.isArray(currentLoadedFlow)) {
+                  currentLoadedFlow = undefined;
+                }
               }
             } catch {}
 
