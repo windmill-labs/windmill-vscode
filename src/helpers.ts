@@ -41,6 +41,8 @@ export function determineLanguage(
       return "graphql";
     case "ps1":
       return "powershell";
+    case "php":
+      return "php";
     case "sql":
       return getSqlType(len, penu);
     case "yaml":

@@ -59,6 +59,12 @@ describe("determineLanguage", () => {
     expect(helpers.determineLanguage(path, "deno")).toBe(expected);
   });
 
+  it('should return "php" when extension is "ps1"', () => {
+    const path = "path/to/file.php";
+    const expected = "php";
+    expect(helpers.determineLanguage(path, "deno")).toBe(expected);
+  });
+
   it('should return "flow" when extension is "yaml" and penu is "flow/flow"', () => {
     const path = "path/to/x.flow/flow.yaml";
     const expected = "flow";
