@@ -57,7 +57,7 @@
     "menus": {
       "editor/title": [
         {
-          "when": "resourceLangId == javascript || resourceLangId == typescript || resourceLangId == python || resourceLangId == bash",
+          "when": "resourceLangId == javascript || resourceLangId == typescript || resourceLangId == python || resourceLangId == bash || resourceLangId == powershell || resourceLangId == php || resourceLangId == sql",
           "command": "windmill.start",
           "group": "navigation"
         }
@@ -170,6 +170,6 @@
     "esbuild": "^0.21.1",
     "js-yaml": "^4.1.0",
     "minimatch": "^9.0.4",
-    "windmill-client": "^1.201.0"
+    "windmill-client": "^1.330.0"
   }
 }

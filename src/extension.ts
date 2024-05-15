@@ -27,7 +27,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  const exts = ["yaml", "ts", "py", "go", "sql", "gql", "ps1", "sh"];
+  const exts = ["yaml", "ts", "py", "go", "sql", "gql", "ps1", "sh", "php"];
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
       if (exts.some((ext) => event.document.uri.path.endsWith("." + ext))) {
