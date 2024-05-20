@@ -45,7 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   let lastActiveEditor: vscode.TextEditor | undefined = undefined;
   let lastFlowDocument: vscode.TextDocument | undefined = undefined;
-  let lastDefaultTs: "deno" | "bun" = "deno";
+  let lastDefaultTs: "deno" | "bun" = "bun";
   let isFileCodebase = false;
 
   function isCodebase(
@@ -131,7 +131,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (await fileExists(uriPath)) {
           let content = await readTextFromUri(uriPath);
           let config = (yaml.load(content) ?? {}) as any;
-          lastDefaultTs = config?.["defaultTs"] ?? "deno";
+          lastDefaultTs = config?.["defaultTs"] ?? "bun";
           isFileCodebase =
             cpath.endsWith(".ts") &&
             isCodebase(wmPath, config?.["codebases"] ?? []);
@@ -442,6 +442,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             const allExtracted = extractInlineScripts(
               message?.flow?.value?.modules ?? [],
+              lastDefaultTs ?? "bun",
               undefined,
               inlineScriptMapping
             );

@@ -12,7 +12,7 @@
   },
   "icon": "windmill.png",
   "publisher": "windmill-labs",
-  "version": "0.2.13",
+  "version": "0.2.27",
   "engines": {
     "vscode": "^1.79.0"
   },
@@ -135,14 +135,15 @@
   },
   "scripts": {
     "test": "npx jest",
-    "vscode:prepublish": "npm run switch-web && npm run package-web && npm run switch-node && npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "switch-web": "mv src/esbuild.ts src/esbuild.node.ts && mv src/esbuild.web.ts src/esbuild.ts",
-    "switch-node": "mv src/esbuild.ts src/esbuild.web.ts && mv src/esbuild.node.ts src/esbuild.ts",
-    "compile-web": "webpack",
-    "watch-web": "webpack --watch",
-    "package-web": "webpack --mode production --devtool hidden-source-map",
+    "vscode:prepublish": "npm run package-web && npm run esbuild-base -- --minify",
+    "esbuild-base": "npm run switch-node && esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:esbuild-wasm --external:esbuild --format=cjs --platform=node",
+    "esbuild": "npm run switch-node && npm run esbuild-base -- --sourcemap",
+    "watch": "npm run switch-node && tsc -watch -p ./",
+    "switch-node": "sed -i 's|import { testBundle } from \"./esbuild.web\";|import { testBundle } from \"./esbuild\";|g' src/extension.ts",
+    "switch-web": "sed -i 's|import { testBundle } from \"./esbuild\";|import { testBundle } from \"./esbuild.web\";|g' src/extension.ts",
+    "compile-web": "npm run switch-web && webpack",
+    "watch-web": "npm run switch-web && webpack --watch",
+    "package-web": "npm run switch-web && webpack --mode production",
     "lint": "eslint src --ext ts",
     "run-in-browser": "vscode-test-web --browserType=chromium --extensionDevelopmentPath=. ."
   },
@@ -167,7 +168,7 @@
     "webpack-cli": "^5.1.1"
   },
   "dependencies": {
-    "esbuild": "^0.21.1",
+    "esbuild-wasm": "^0.21.1",
     "js-yaml": "^4.1.0",
     "minimatch": "^9.0.4",
     "windmill-client": "^1.201.0"
