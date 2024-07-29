@@ -39,6 +39,7 @@ export async function testBundle(
         loader: "ts",
       },
       write: false,
+      platform: "node",
     });
     appendLine("testBundle bundled: " + path);
     postMessage?.({

@@ -96,6 +96,13 @@ export function activate(context: vscode.ExtensionContext) {
     return new TextDecoder().decode(bytes);
   }
 
+  function getRootPath(editor: vscode.TextEditor): string | undefined {
+    return (
+      getRootPathFromRunnablePath(editor.document.uri.path) ||
+      vscode.workspace.getWorkspaceFolder(editor.document.uri)?.uri.path
+    );
+  }
+
   async function refreshPanel(
     editor: vscode.TextEditor | undefined,
     rsn: string
@@ -104,9 +111,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    const rootPath =
-      getRootPathFromRunnablePath(editor.document.uri.path) ||
-      vscode.workspace.getWorkspaceFolder(editor.document.uri)?.uri.path;
+    const rootPath = getRootPath(editor);
 
     if (!editor?.document.uri.path.includes(rootPath || "")) {
       return;
@@ -206,7 +211,23 @@ export function activate(context: vscode.ExtensionContext) {
           if (await fileExists(uri)) {
             const rd = await readTextFromUri(uri);
             const config = (yaml.load(rd) as any) ?? {};
-            lock = config?.["lock"];
+            let nlock = config?.["lock"];
+            if (
+              nlock &&
+              typeof nlock == "string" &&
+              nlock.trimStart().startsWith("!inline ")
+            ) {
+              const path = nlock.split(" ")[1];
+              const rootPath = getRootPath(editor);
+              const uriPath = rootPath + "/" + path;
+              try {
+                channel.appendLine("reading lock file: " + uriPath);
+                nlock = await readTextFromUri(vscode.Uri.parse(uriPath));
+              } catch (e) {
+                channel.appendLine(`Lock file ${path} not found: ${e}`);
+              }
+            }
+            lock = nlock;
             tag = config?.["tag"];
           }
           const message = {
