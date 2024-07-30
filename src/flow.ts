@@ -11,7 +11,7 @@ interface State {
 }
 function assignPath(
   summary: string | undefined,
-  language: RawScript.language,
+  language: RawScript.language | "bunnative",
   state: State,
   defaultTs: "bun" | "deno"
 ): string {
@@ -29,7 +29,7 @@ function assignPath(
   }
   let ext;
   if (language == "python3") ext = "py";
-  else if (language == defaultTs) ext = "ts";
+  else if (language == defaultTs || language == "bunnative") ext = "ts";
   else if (language == "deno") ext = "deno.ts";
   else if (language == "bun") ext = "bun.ts";
   else if (language == "go") ext = "go";
@@ -41,6 +41,7 @@ function assignPath(
   else if (language == "snowflake") ext = "sf.sql";
   else if (language == "graphql") ext = "gql";
   else if (language == "nativets") ext = "native.ts";
+  else if (language == "php") ext = "php";
 
   return `${name}.inline_script.${ext}`;
 }
