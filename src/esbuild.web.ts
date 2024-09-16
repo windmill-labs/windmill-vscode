@@ -3,7 +3,16 @@ export async function testBundle(
   contents: string,
   id: string,
   appendLine: (x: string) => void,
+  codebase: any | undefined,
+  rootPath: string | undefined,
+  format: "cjs" | "esm",
+  platform: "node" | "browser",
+  command: string,
   postMessage?: (x: any) => void
 ) {
-  throw Error("Not available in web version");
+  appendLine("testBundle not available in web version");
+  postMessage?.({
+    type: "testBundleError",
+    error: "Bundle not available in web version",
+  });
 }
