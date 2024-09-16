@@ -52,6 +52,16 @@
         "command": "windmill.addWorkspace",
         "title": "add a windmill workspace",
         "category": "Windmill"
+      },
+      {
+        "command": "windmill.pinPreview",
+        "title": "Windmill: Pin Preview To File",
+        "category": "Windmill"
+      },
+      {
+        "command": "windmill.unpinPreview",
+        "title": "Windmill: Unpin Preview To File",
+        "category": "Windmill"
       }
     ],
     "menus": {
@@ -139,11 +149,11 @@
     "esbuild-base": "npm run switch-node && esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:esbuild-wasm --external:esbuild --format=cjs --platform=node",
     "esbuild": "npm run switch-node && npm run esbuild-base -- --sourcemap",
     "watch": "npm run switch-node && tsc -watch -p ./",
-    "switch-node": "sed -i 's|import { testBundle } from \"./esbuild.web\";|import { testBundle } from \"./esbuild\";|g' src/extension.ts",
-    "switch-web": "sed -i 's|import { testBundle } from \"./esbuild\";|import { testBundle } from \"./esbuild.web\";|g' src/extension.ts",
+    "switch-node": "sed -i '' 's/import { testBundle } from \".\\/esbuild.web\";/import { testBundle } from \".\\/esbuild\";/g' src/extension.ts",
+    "switch-web": "sed -i '' 's/import { testBundle } from \".\\/esbuild\";/import { testBundle } from \".\\/esbuild.web\";/g' src/extension.ts",
     "compile-web": "npm run switch-web && webpack",
     "watch-web": "npm run switch-web && webpack --watch",
-    "package-web": "npm run switch-web && webpack --mode production",
+    "package-web": "npm run switch-web && webpack --mode production --config webpack.config.js",
     "lint": "eslint src --ext ts",
     "run-in-browser": "vscode-test-web --browserType=chromium --extensionDevelopmentPath=. ."
   },
