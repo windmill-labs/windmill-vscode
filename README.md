@@ -30,3 +30,21 @@ The keybindings for that command are: Ctrl+Enter and Shift+Enter.
 ![image](./flows.png)
 
 ![demo](./demo.gif)
+
+## Development
+
+1. `npm install`
+2. `npm install -g vsce`
+3. `vsce package`
+4. `code --install-extension ./windmill-<version>.vsix` or `cursor --install-extension ./windmill-<version>.vsix`
+
+It is worth noting that sed works differently on Mac and Linux/Windows. The scripts below may need to be adjusted if you are on Mac.
+
+```
+{
+    "scripts": {
+       "switch-node": "sed -i '' 's/import { testBundle } from \".\\/esbuild.web\";/import { testBundle } from \".\\/esbuild\";/g' src/extension.ts",
+       "switch-web": "sed -i '' 's/import { testBundle } from \".\\/esbuild\";/import { testBundle } from \".\\/esbuild.web\";/g' src/extension.ts",
+    }
+}
+```
