@@ -66,7 +66,7 @@ export function getTypescriptType(
       return "deno";
     }
   }
-  return defaultTs ?? "deno";
+  return defaultTs ?? "bun";
 }
 
 export function getSqlType(len: number, penu: string) {
