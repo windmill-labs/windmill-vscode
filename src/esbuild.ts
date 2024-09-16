@@ -48,7 +48,7 @@ export async function testBundle(
         },
         external: undefined,
         plugins:
-          command == "testPreviewBundle"
+          command === "testPreviewBundle"
             ? [
                 {
                   name: "externalize-everything-relative",
@@ -71,7 +71,7 @@ export async function testBundle(
         write: false,
         platform: platform,
         packages: "bundle",
-        target: platform == "node" ? "node20.15.1" : undefined,
+        target: platform === "node" ? "node20.15.1" : undefined,
       })
     ).outputFiles[0].text;
 

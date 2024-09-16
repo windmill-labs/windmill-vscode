@@ -12,7 +12,7 @@
   },
   "icon": "windmill.png",
   "publisher": "windmill-labs",
-  "version": "0.2.34",
+  "version": "0.2.35",
   "engines": {
     "vscode": "^1.79.0"
   },
@@ -149,8 +149,8 @@
     "esbuild-base": "npm run switch-node && esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:esbuild-wasm --external:esbuild --format=cjs --platform=node",
     "esbuild": "npm run switch-node && npm run esbuild-base -- --sourcemap",
     "watch": "npm run switch-node && tsc -watch -p ./",
-    "switch-node": "sed -i '' 's/import { testBundle } from \".\\/esbuild.web\";/import { testBundle } from \".\\/esbuild\";/g' src/extension.ts",
-    "switch-web": "sed -i '' 's/import { testBundle } from \".\\/esbuild\";/import { testBundle } from \".\\/esbuild.web\";/g' src/extension.ts",
+    "switch-node": "sed -i 's|import { testBundle } from \"./esbuild.web\";|import { testBundle } from \"./esbuild\";|g' src/extension.ts",
+    "switch-web": "sed -i 's|import { testBundle } from \"./esbuild\";|import { testBundle } from \"./esbuild.web\";|g' src/extension.ts",
     "compile-web": "npm run switch-web && webpack",
     "watch-web": "npm run switch-web && webpack --watch",
     "package-web": "npm run switch-web && webpack --mode production --config webpack.config.js",
@@ -182,7 +182,7 @@
     "esbuild-wasm": "^0.23.0",
     "js-yaml": "^4.1.0",
     "minimatch": "^9.0.4",
-    "windmill-client": "^1.330.0"
+    "windmill-client": "^1.330.0",
     "tar-stream": "^3.1.7"
   }
 }

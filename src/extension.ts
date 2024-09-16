@@ -212,7 +212,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     if (lang) {
       try {
-        if (lang == "flow") {
+        if (lang === "flow") {
           let uriPath = targetEditor?.document.uri.toString();
           let flow = yaml.load(targetEditor?.document.getText()) as OpenFlow;
           async function replaceInlineScripts(modules: FlowModule[]) {
