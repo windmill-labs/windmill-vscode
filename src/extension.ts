@@ -5,6 +5,13 @@ import { getRootPathFromRunnablePath, determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 import { minimatch } from "minimatch";
 import { testBundle } from "./esbuild";
+
+export type Codebase = {
+  assets?: {
+    from: string;
+    to: string;
+  }[];
+};
 export function activate(context: vscode.ExtensionContext) {
   console.log("Windmill extension is now active");
 
@@ -46,19 +53,33 @@ export function activate(context: vscode.ExtensionContext) {
   let lastActiveEditor: vscode.TextEditor | undefined = undefined;
   let lastFlowDocument: vscode.TextDocument | undefined = undefined;
   let lastDefaultTs: "deno" | "bun" = "bun";
-  let isFileCodebase = false;
+  let codebaseFound: Codebase | undefined = undefined;
 
-  function isCodebase(
+  function findCodebase(
     path: string,
-    codebases: { includes?: string | string[]; excludes?: string | string[] }[]
-  ): boolean {
+    codebases: {
+      includes?: string | string[];
+      excludes?: string | string[];
+      assets?: {
+        from: string;
+        to: string;
+      }[];
+    }[]
+  ):
+    | {
+        assets?: {
+          from: string;
+          to: string;
+        }[];
+      }
+    | undefined {
     for (const c of codebases) {
       let included = false;
       let excluded = false;
-      if (c.includes == undefined || c.includes == null) {
+      if (c.includes === undefined || c.includes === null) {
         included = true;
       }
-      if (typeof c.includes == "string") {
+      if (typeof c.includes === "string") {
         c.includes = [c.includes];
       }
       for (const r of c.includes ?? []) {
@@ -69,7 +90,7 @@ export function activate(context: vscode.ExtensionContext) {
           included = true;
         }
       }
-      if (typeof c.excludes == "string") {
+      if (typeof c.excludes === "string") {
         c.excludes = [c.excludes];
       }
       for (const r of c.excludes ?? []) {
@@ -77,9 +98,9 @@ export function activate(context: vscode.ExtensionContext) {
           excluded = true;
         }
       }
-      return included && !excluded;
+      return included && !excluded ? c : undefined;
     }
-    return false;
+    return undefined;
   }
 
   async function fileExists(uri: vscode.Uri) {
@@ -124,9 +145,10 @@ export function activate(context: vscode.ExtensionContext) {
     const splitted = cpath.split(".");
     const wmPath = splitted[0];
 
-    if (rsn === "changeActiveTextEditor" || rsn == "start") {
+    if (rsn === "changeActiveTextEditor" || rsn === "start") {
       let splittedSlash = wmPath.split("/");
       channel.appendLine("wmPath: " + wmPath + "|" + splittedSlash);
+      let found = false;
       for (let i = 0; i < splittedSlash.length; i++) {
         const path = splittedSlash.slice(0, i).join("/") + "/wmill.yaml";
         channel.appendLine(
@@ -137,19 +159,22 @@ export function activate(context: vscode.ExtensionContext) {
           let content = await readTextFromUri(uriPath);
           let config = (yaml.load(content) ?? {}) as any;
           lastDefaultTs = config?.["defaultTs"] ?? "bun";
-          isFileCodebase =
-            cpath.endsWith(".ts") &&
-            isCodebase(wmPath, config?.["codebases"] ?? []);
+          codebaseFound = cpath.endsWith(".ts")
+            ? findCodebase(wmPath, config?.["codebases"] ?? [])
+            : undefined;
           channel.appendLine(
             path +
               " exists! defaultTs: " +
               lastDefaultTs +
               ", isCodebase:" +
-              isFileCodebase
+              JSON.stringify(codebaseFound)
           );
-
+          found = true;
           break;
         }
+      }
+      if (!found) {
+        codebaseFound = undefined;
       }
     }
 
@@ -157,13 +182,13 @@ export function activate(context: vscode.ExtensionContext) {
 
     if (lang) {
       try {
-        if (lang == "flow") {
+        if (lang === "flow") {
           let uriPath = editor?.document.uri.toString();
           let flow = yaml.load(editor?.document.getText()) as OpenFlow;
           async function replaceInlineScripts(modules: FlowModule[]) {
             await Promise.all(
               modules.map(async (m) => {
-                if (m.value.type == "rawscript") {
+                if (m.value.type === "rawscript") {
                   const path = m.value.content.split(" ")[1];
                   const fpath =
                     uriPath.split("/").slice(0, -1).join("/") + "/" + path;
@@ -172,15 +197,15 @@ export function activate(context: vscode.ExtensionContext) {
                     text = await readTextFromUri(vscode.Uri.parse(fpath));
                   } catch (e) {}
                   m.value.content = text;
-                } else if (m.value.type == "forloopflow") {
+                } else if (m.value.type === "forloopflow") {
                   await replaceInlineScripts(m.value.modules);
-                } else if (m.value.type == "branchall") {
+                } else if (m.value.type === "branchall") {
                   await Promise.all(
                     m.value.branches.map(
                       async (b) => await replaceInlineScripts(b.modules)
                     )
                   );
-                } else if (m.value.type == "branchone") {
+                } else if (m.value.type === "branchone") {
                   await Promise.all(
                     m.value.branches.map(
                       async (b) => await replaceInlineScripts(b.modules)
@@ -214,7 +239,7 @@ export function activate(context: vscode.ExtensionContext) {
             let nlock = config?.["lock"];
             if (
               nlock &&
-              typeof nlock == "string" &&
+              typeof nlock === "string" &&
               nlock.trimStart().startsWith("!inline ")
             ) {
               const path = nlock.split(" ")[1];
@@ -237,12 +262,18 @@ export function activate(context: vscode.ExtensionContext) {
             language: lang,
             lock,
             tag,
-            isCodebase: isFileCodebase,
+            codebaseFound: codebaseFound,
+            isCodebase: codebaseFound !== undefined,
           };
 
           channel.appendLine(
             "sending message: " +
-              JSON.stringify({ lang, isFileCodebase, wmPath, rsn })
+              JSON.stringify({
+                lang,
+                isFileCodebase: codebaseFound,
+                wmPath,
+                rsn,
+              })
           );
 
           currentPanel?.webview.postMessage(message);
@@ -323,7 +354,7 @@ export function activate(context: vscode.ExtensionContext) {
                           ],
                           true
                         );
-                        await conf.update("currentWorkspace", name);
+                        await conf.update("currentWorkspace", name, false);
                         if (currentPanel) {
                           currentPanel.webview.html = getWebviewContent();
                         }
@@ -342,7 +373,7 @@ export function activate(context: vscode.ExtensionContext) {
         (vscode.workspace
           .getConfiguration("windmill")
           .get("additionalWorkspaces") as any[]) ?? []
-      ).map((r: any) => r.name);
+      ).map((r: any) => r?.name ?? "unknown");
       vscode.window
         .showQuickPick(["main", ...remotes, "Add a remote"], {
           canPickMany: false,
@@ -352,9 +383,23 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.commands.executeCommand("windmill.addWorkspace");
             return;
           } else {
+            vscode.window.showInformationMessage(
+              "Switching selected workspace to " + value
+            );
             await vscode.workspace
               .getConfiguration("windmill")
               .update("currentWorkspace", value, true);
+            await vscode.workspace
+              .getConfiguration("windmill")
+              .update("currentWorkspace", value);
+            vscode.window.showInformationMessage(
+              "Switched to " +
+                vscode.workspace
+                  .getConfiguration("windmill")
+                  ?.get("currentWorkspace")
+            );
+            setWorkspaceStatus();
+
             if (currentPanel) {
               currentPanel.webview.html = getWebviewContent();
             }
@@ -428,16 +473,39 @@ export function activate(context: vscode.ExtensionContext) {
             }
             return;
           case "testBundle":
-            let path = lastActiveEditor?.document.uri.path;
+            const cpath1 = lastActiveEditor?.document.uri.path;
             testBundle(
-              path,
+              cpath1,
               lastActiveEditor?.document.getText() ?? "",
               message.id,
               channel.appendLine,
+              codebaseFound,
+              lastActiveEditor ? getRootPath(lastActiveEditor) : undefined,
+              "cjs",
+              "node",
+              message.type,
               (x) => {
                 currentPanel?.webview.postMessage(x);
               }
             );
+            return;
+          case "testPreviewBundle":
+            const cpath2 = lastActiveEditor?.document.uri.path;
+            testBundle(
+              cpath2,
+              lastActiveEditor?.document.getText() ?? "",
+              message.id,
+              channel.appendLine,
+              undefined,
+              lastActiveEditor ? getRootPath(lastActiveEditor) : undefined,
+              "esm",
+              "browser",
+              message.type,
+              (x) => {
+                currentPanel?.webview.postMessage(x);
+              }
+            );
+            return;
           case "flow":
             let currentLoadedFlow: FlowModule[] | undefined = undefined;
 
@@ -623,7 +691,7 @@ function getWebviewContent() {
             window.dispatchEvent(new KeyboardEvent('keydown', JSON.parse(message.key)));
           } else if (message.type === 'refresh') {
             vscode.postMessage({ type: 'refresh' });
-          } else if (['flow', 'testBundle'].includes(message.type)) {
+          } else if (['flow', 'testBundle', 'testPreviewBundle'].includes(message.type)) {
             vscode.postMessage(message);
           } 
         }
