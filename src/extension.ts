@@ -5,6 +5,7 @@ import { getRootPathFromRunnablePath, determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 import { minimatch } from "minimatch";
 import { testBundle } from "./esbuild";
+
 export function activate(context: vscode.ExtensionContext) {
   console.log("Windmill extension is now active");
 
@@ -47,6 +48,7 @@ export function activate(context: vscode.ExtensionContext) {
   let lastFlowDocument: vscode.TextDocument | undefined = undefined;
   let lastDefaultTs: "deno" | "bun" = "bun";
   let isFileCodebase = false;
+  let pinnedFileUri: vscode.Uri | undefined = undefined;
 
   function isCodebase(
     path: string,
@@ -107,20 +109,49 @@ export function activate(context: vscode.ExtensionContext) {
     editor: vscode.TextEditor | undefined,
     rsn: string
   ) {
-    if (!editor) {
+    let targetEditor = editor;
+
+    if (pinnedFileUri) {
+      // Try to find the document corresponding to pinnedFileUri
+      let doc = vscode.workspace.textDocuments.find(
+        (d) => d.uri.toString() === pinnedFileUri?.toString()
+      );
+
+      if (!doc) {
+        // The document may not be open, open it
+        try {
+          doc = await vscode.workspace.openTextDocument(pinnedFileUri);
+        } catch (e) {
+          vscode.window.showErrorMessage(
+            `Cannot open pinned file: ${pinnedFileUri?.fsPath}`
+          );
+          pinnedFileUri = undefined;
+        }
+      }
+
+      if (doc) {
+        targetEditor = {
+          document: doc,
+        } as vscode.TextEditor;
+      } else {
+        return;
+      }
+    }
+
+    if (!targetEditor) {
       return;
     }
 
-    const rootPath = getRootPath(editor);
+    const rootPath = getRootPath(targetEditor);
 
-    if (!editor?.document.uri.path.includes(rootPath || "")) {
+    if (!targetEditor?.document.uri.path.includes(rootPath || "")) {
       return;
     }
     // channel.appendLine("refreshing panel: " + rsn);
 
-    lastActiveEditor = editor;
+    lastActiveEditor = targetEditor;
 
-    const cpath = editor?.document.uri.path.replace(rootPath + "/", "");
+    const cpath = targetEditor?.document.uri.path.replace(rootPath + "/", "");
     const splitted = cpath.split(".");
     const wmPath = splitted[0];
 
@@ -158,8 +189,8 @@ export function activate(context: vscode.ExtensionContext) {
     if (lang) {
       try {
         if (lang == "flow") {
-          let uriPath = editor?.document.uri.toString();
-          let flow = yaml.load(editor?.document.getText()) as OpenFlow;
+          let uriPath = targetEditor?.document.uri.toString();
+          let flow = yaml.load(targetEditor?.document.getText()) as OpenFlow;
           async function replaceInlineScripts(modules: FlowModule[]) {
             await Promise.all(
               modules.map(async (m) => {
@@ -200,13 +231,13 @@ export function activate(context: vscode.ExtensionContext) {
             uriPath,
           };
 
-          lastFlowDocument = editor?.document;
+          lastFlowDocument = targetEditor?.document;
           currentPanel?.webview.postMessage(message);
         } else {
           let lock: string | undefined = undefined;
           let tag: string | undefined = undefined;
           const uri = vscode.Uri.parse(
-            editor.document.uri.toString().split(".")[0] + ".script.yaml"
+            targetEditor.document.uri.toString().split(".")[0] + ".script.yaml"
           );
           if (await fileExists(uri)) {
             const rd = await readTextFromUri(uri);
@@ -218,7 +249,7 @@ export function activate(context: vscode.ExtensionContext) {
               nlock.trimStart().startsWith("!inline ")
             ) {
               const path = nlock.split(" ")[1];
-              const rootPath = getRootPath(editor);
+              const rootPath = getRootPath(targetEditor);
               const uriPath = rootPath + "/" + path;
               try {
                 channel.appendLine("reading lock file: " + uriPath);
@@ -232,7 +263,7 @@ export function activate(context: vscode.ExtensionContext) {
           }
           const message = {
             type: "replaceScript",
-            content: editor?.document.getText(),
+            content: targetEditor?.document.getText(),
             path: wmPath,
             language: lang,
             lock,
@@ -410,9 +441,13 @@ export function activate(context: vscode.ExtensionContext) {
       currentPanel.webview.html = getWebviewContent();
       vscode.window.activeTextEditor &&
         refreshPanel(vscode.window.activeTextEditor, "start");
+
       currentPanel.onDidDispose(
         () => {
           currentPanel = undefined;
+          if (pinnedFileUri) {
+            pinnedFileUri = undefined;
+          }
         },
         undefined,
         context.subscriptions
@@ -438,6 +473,7 @@ export function activate(context: vscode.ExtensionContext) {
                 currentPanel?.webview.postMessage(x);
               }
             );
+            return;
           case "flow":
             let currentLoadedFlow: FlowModule[] | undefined = undefined;
 
@@ -544,6 +580,30 @@ export function activate(context: vscode.ExtensionContext) {
       start();
     })
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("windmill.pinPreview", () => {
+      if (vscode.window.activeTextEditor) {
+        pinnedFileUri = vscode.window.activeTextEditor.document.uri;
+        if (currentPanel === undefined) {
+          start();
+        } else {
+          refreshPanel(vscode.window.activeTextEditor, "pinPreview");
+        }
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("windmill.unpinPreview", () => {
+      pinnedFileUri = undefined;
+      if (currentPanel === undefined) {
+        // Do nothing
+      } else {
+        refreshPanel(vscode.window.activeTextEditor, "unpinPreview");
+      }
+    })
+  );
 }
 
 function isArrayEqual(arr1: Uint8Array, arr2: Uint8Array): boolean {
@@ -586,7 +646,7 @@ function getWebviewContent() {
       </head>
 
       <body>
-        Invalid remote: ${currentWorkspace} not found among the additionalRemotees
+        Invalid remote: ${currentWorkspace} not found among the additionalRemotes
       </body>
       </html>`;
     }
