@@ -227,7 +227,22 @@ export function activate(context: vscode.ExtensionContext) {
                     text = await readTextFromUri(vscode.Uri.parse(fpath));
                   } catch (e) {}
                   m.value.content = text;
-                } else if (m.value.type === "forloopflow") {
+                  if (m.value.lock && m.value.lock?.startsWith("!inline ")) {
+                    const lockPath = m.value.lock.split(" ")[1];
+                    const fpath =
+                      uriPath.split("/").slice(0, -1).join("/") +
+                      "/" +
+                      lockPath;
+                    let text = "";
+                    try {
+                      text = await readTextFromUri(vscode.Uri.parse(fpath));
+                    } catch (e) {}
+                    m.value.lock = text;
+                  }
+                } else if (
+                  m.value.type === "forloopflow" ||
+                  m.value.type === "whileloopflow"
+                ) {
                   await replaceInlineScripts(m.value.modules);
                 } else if (m.value.type === "branchall") {
                   await Promise.all(
@@ -563,6 +578,9 @@ export function activate(context: vscode.ExtensionContext) {
             let inlineScriptMapping = {};
             extraCurrentMapping(currentLoadedFlow, inlineScriptMapping);
 
+            channel.appendLine(
+              "mapping: " + JSON.stringify(inlineScriptMapping)
+            );
             const allExtracted = extractInlineScripts(
               message?.flow?.value?.modules ?? [],
               lastDefaultTs ?? "bun",

@@ -57,6 +57,9 @@ export function extractInlineScripts(
       counter: 0,
       seen_names: new Set(),
     };
+    Object.values(mapping).forEach((v) =>
+      state!.seen_names.add(v.split(".")[0])
+    );
   }
 
   return modules.flatMap((m) => {
@@ -66,8 +69,31 @@ export function extractInlineScripts(
         assignPath(m.summary, m.value.language, state!, defaultTs ?? "bun");
       const content = m.value.content;
       m.value.content = "!inline " + path;
-      return [{ path: path, content: content }];
-    } else if (m.value.type == "forloopflow") {
+      let lockPath = undefined;
+      if (
+        ![
+          "mssql",
+          "mysql",
+          "postgresql",
+          "bigquery",
+          "snowflake",
+          "postgresql",
+          "bash",
+          "oracledb",
+        ].includes(m.value.language)
+      ) {
+        lockPath = path.split(".")[0] + ".inline_script.lock";
+        m.value.lock = "!inline " + lockPath;
+      }
+      const r = [{ path: path, content: content }];
+      if (lockPath) {
+        r.push({ path: lockPath, content: "" });
+      }
+      return r;
+    } else if (
+      m.value.type == "forloopflow" ||
+      m.value.type == "whileloopflow"
+    ) {
       return extractInlineScripts(m.value.modules, defaultTs, state, mapping);
     } else if (m.value.type == "branchall") {
       return m.value.branches.flatMap((b) =>
@@ -101,13 +127,16 @@ export function extraCurrentMapping(
       if (m.value.content.startsWith("!inline ")) {
         mapping[m.id] = m.value.content.trim().split(" ")[1];
       }
-    } else if (m.value.type == "forloopflow") {
+    } else if (
+      m.value.type == "forloopflow" ||
+      m.value.type == "whileloopflow"
+    ) {
       extraCurrentMapping(m.value.modules, mapping);
     } else if (m.value.type == "branchall") {
       m.value.branches.forEach((b) => extraCurrentMapping(b.modules, mapping));
     } else if (m.value.type == "branchone") {
-      m.value.branches.forEach((b) => extraCurrentMapping(b.modules, mapping)),
-        extraCurrentMapping(m.value.default, mapping);
+      m.value.branches.forEach((b) => extraCurrentMapping(b.modules, mapping));
+      extraCurrentMapping(m.value.default, mapping);
     }
   });
   return mapping;
