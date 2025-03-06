@@ -5,12 +5,16 @@ import { getRootPathFromRunnablePath, determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 import { minimatch } from "minimatch";
 import { testBundle } from "./esbuild";
+import * as path from "path";
 
 export type Codebase = {
   assets?: {
     from: string;
     to: string;
   }[];
+  external?: [];
+  define?: { [key: string]: string };
+  inject?: string[];
 };
 export function activate(context: vscode.ExtensionContext) {
   console.log("Windmill extension is now active");
@@ -164,7 +168,12 @@ export function activate(context: vscode.ExtensionContext) {
 
     const rootPath = getRootPath(targetEditor);
 
-    if (!targetEditor?.document.uri.path.includes(rootPath || "")) {
+    const targetPath = targetEditor?.document.uri.path;
+
+    if (
+      !targetPath.includes(rootPath || "") ||
+      targetPath.endsWith(path.sep + "wmill.yaml")
+    ) {
       return;
     }
     // channel.appendLine("refreshing panel: " + rsn);

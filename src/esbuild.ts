@@ -46,7 +46,6 @@ export async function testBundle(
           sourcefile,
           loader: "ts",
         },
-        external: undefined,
         plugins:
           command === "testPreviewBundle"
             ? [
@@ -69,6 +68,9 @@ export async function testBundle(
         format: format,
         bundle: true,
         write: false,
+        external: codebase?.external,
+        inject: codebase?.inject,
+        define: codebase?.define,
         platform: platform,
         packages: "bundle",
         target: platform === "node" ? "node20.15.1" : undefined,
@@ -123,7 +125,6 @@ async function createTarFromStrings(
       tarball.entry({ name: "main.js" }, out);
       for (const asset of codebase?.assets ?? []) {
         try {
-          vscode.window.showInformationMessage(asset.from);
           const data = await vscode.workspace.fs.readFile(
             vscode.Uri.file((rootPath ? rootPath + "/" : "") + asset.from)
           );
