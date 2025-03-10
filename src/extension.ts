@@ -752,6 +752,10 @@ function getWebviewContent() {
     remoteUrl += "/";
   }
 
+  vscode.window.showInformationMessage(
+    `Starting Windmill with workspace ${currentWorkspace} on ${remoteUrl}dev`
+  );
+
   return `<!DOCTYPE html>
   <html lang="en">
   <head>
@@ -761,11 +765,22 @@ function getWebviewContent() {
   </head>
 
   <body>
+    <div id="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 20px;">
+      Loading ${currentWorkspace} on ${remoteUrl}dev...
+    </div>
     <iframe id="iframe" src="${remoteUrl}dev?wm_token=${token}&workspace=${workspace}&activeColorTheme=${vscode.window.activeColorTheme.kind}" width="100%" style="border: none; height: 100vh;"></iframe>
     <script>
     const vscode = acquireVsCodeApi();
     const iframe = document.getElementById('iframe');
     const h1 = document.getElementById('foo');
+    const loading = document.getElementById('loading');
+
+    iframe.onload = function() {
+      setTimeout(() => {
+        loading.style.display = 'none'; 
+        iframe.style.display = 'block';  
+      }, 1000);
+    }
 
     window.addEventListener('message', event => {
         const message = event.data;

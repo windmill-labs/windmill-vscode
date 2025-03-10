@@ -2,6 +2,7 @@ import * as esbuild from "esbuild-wasm";
 import { Codebase } from "./extension";
 import * as vscode from "vscode";
 import * as tar from "tar-stream";
+import * as node_path from "path";
 
 let initialized = false;
 
@@ -69,7 +70,9 @@ export async function testBundle(
         bundle: true,
         write: false,
         external: codebase?.external,
-        inject: codebase?.inject,
+        inject: codebase?.inject?.map((x) =>
+          node_path.resolve(rootPath ?? "", x)
+        ),
         define: codebase?.define,
         platform: platform,
         packages: "bundle",
@@ -108,6 +111,7 @@ export async function testBundle(
     postMessage?.({
       type: "testBundleError",
       error: e,
+      errorMessage: (e as any).toString(),
     });
   }
 }
@@ -120,7 +124,7 @@ async function createTarFromStrings(
   return new Promise((resolve, reject) => {
     (async () => {
       const chunks: any[] = []; // Array to collect tar file chunks
-      const tarball = tar.pack(); // Create a pack stream
+      const tarball = tar.pack({}); // Create a pack stream
 
       tarball.entry({ name: "main.js" }, out);
       for (const asset of codebase?.assets ?? []) {
@@ -128,7 +132,14 @@ async function createTarFromStrings(
           const data = await vscode.workspace.fs.readFile(
             vscode.Uri.file((rootPath ? rootPath + "/" : "") + asset.from)
           );
-          tarball.entry({ name: asset.to }, Buffer.from(data));
+          let buffer = Buffer.from(data);
+          tarball.entry(
+            {
+              name: asset.to,
+              size: buffer.length,
+            },
+            buffer
+          );
         } catch (e) {
           console.error(e);
           reject(e);
