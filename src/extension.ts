@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import * as yaml from "js-yaml";
-import { extraCurrentMapping, extractInlineScripts } from "./flow";
+import { extractCurrentMapping, extractInlineScripts } from "./flow";
 import { getRootPathFromRunnablePath, determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 import { minimatch } from "minimatch";
@@ -585,7 +585,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");
             let inlineScriptMapping = {};
-            extraCurrentMapping(currentLoadedFlow, inlineScriptMapping);
+            extractCurrentMapping(currentLoadedFlow, inlineScriptMapping);
 
             channel.appendLine(
               "mapping: " + JSON.stringify(inlineScriptMapping)

@@ -112,7 +112,7 @@ export function extractInlineScripts(
   });
 }
 
-export function extraCurrentMapping(
+export function extractCurrentMapping(
   modules: FlowModule[] | undefined,
   mapping: Record<string, string>
 ) {
@@ -131,12 +131,12 @@ export function extraCurrentMapping(
       m.value.type == "forloopflow" ||
       m.value.type == "whileloopflow"
     ) {
-      extraCurrentMapping(m.value.modules, mapping);
+      extractCurrentMapping(m.value.modules, mapping);
     } else if (m.value.type == "branchall") {
-      m.value.branches.forEach((b) => extraCurrentMapping(b.modules, mapping));
+      m.value.branches.forEach((b) => extractCurrentMapping(b.modules, mapping));
     } else if (m.value.type == "branchone") {
-      m.value.branches.forEach((b) => extraCurrentMapping(b.modules, mapping));
-      extraCurrentMapping(m.value.default, mapping);
+      m.value.branches.forEach((b) => extractCurrentMapping(b.modules, mapping));
+      extractCurrentMapping(m.value.default, mapping);
     }
   });
   return mapping;
