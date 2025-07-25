@@ -5,28 +5,12 @@ interface InlineScript {
   content: string;
 }
 
-interface State {
-  counter: number;
-  seen_names: Set<string>;
-}
 function assignPath(
-  summary: string | undefined,
+  id: string,
   language: RawScript["language"] | "bunnative",
-  state: State,
   defaultTs: "bun" | "deno"
 ): string {
-  let name;
-  if (summary && summary != "" && !state.seen_names.has(summary)) {
-    name = summary.toLowerCase().replace(/[^a-z0-9]/g, "_");
-    state.seen_names.add(name);
-  } else {
-    name = `inline_script_${state.counter}`;
-    while (state.seen_names.has(name)) {
-      state.counter++;
-      name = `inline_script_${state.counter}`;
-    }
-    state.seen_names.add(name);
-  }
+  const name = id.toLowerCase().replace(/[^a-z0-9]/g, "_");
   let ext;
   if (language == "python3") ext = "py";
   else if (language == defaultTs || language == "bunnative") ext = "ts";
@@ -49,24 +33,13 @@ function assignPath(
 export function extractInlineScripts(
   modules: FlowModule[],
   defaultTs?: "bun" | "deno",
-  state?: State,
   mapping: Record<string, string> = {}
 ): InlineScript[] {
-  if (!state) {
-    state = {
-      counter: 0,
-      seen_names: new Set(),
-    };
-    Object.values(mapping).forEach((v) =>
-      state!.seen_names.add(v.split(".")[0])
-    );
-  }
-
   return modules.flatMap((m) => {
     if (m.value.type == "rawscript") {
       const path =
         mapping[m.id] ??
-        assignPath(m.summary, m.value.language, state!, defaultTs ?? "bun");
+        assignPath(m.id, m.value.language, defaultTs ?? "bun");
       const content = m.value.content;
       m.value.content = "!inline " + path;
       let lockPath = undefined;
@@ -94,17 +67,17 @@ export function extractInlineScripts(
       m.value.type == "forloopflow" ||
       m.value.type == "whileloopflow"
     ) {
-      return extractInlineScripts(m.value.modules, defaultTs, state, mapping);
+      return extractInlineScripts(m.value.modules, defaultTs, mapping);
     } else if (m.value.type == "branchall") {
       return m.value.branches.flatMap((b) =>
-        extractInlineScripts(b.modules, defaultTs, state, mapping)
+        extractInlineScripts(b.modules, defaultTs, mapping)
       );
     } else if (m.value.type == "branchone") {
       return [
         ...m.value.branches.flatMap((b) =>
-          extractInlineScripts(b.modules, defaultTs, state, mapping)
+          extractInlineScripts(b.modules, defaultTs, mapping)
         ),
-        ...extractInlineScripts(m.value.default, defaultTs, state, mapping),
+        ...extractInlineScripts(m.value.default, defaultTs, mapping),
       ];
     } else {
       return [];
