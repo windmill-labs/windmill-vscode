@@ -1,11 +1,12 @@
 import * as vscode from "vscode";
 import * as yaml from "js-yaml";
 import { extractCurrentMapping, extractInlineScripts } from "./flow";
-import { getRootPathFromRunnablePath, determineLanguage } from "./helpers";
+import { determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 import { minimatch } from "minimatch";
 import { testBundle } from "./esbuild";
 import * as path from "path";
+import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
 
 export type Codebase = {
   assets?: {
@@ -16,6 +17,7 @@ export type Codebase = {
   define?: { [key: string]: string };
   inject?: string[];
 };
+
 export function activate(context: vscode.ExtensionContext) {
   console.log("Windmill extension is now active");
 
@@ -108,26 +110,6 @@ export function activate(context: vscode.ExtensionContext) {
     return undefined;
   }
 
-  async function fileExists(uri: vscode.Uri) {
-    try {
-      await vscode.workspace.fs.stat(uri);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  async function readTextFromUri(uri: vscode.Uri) {
-    const bytes = await vscode.workspace.fs.readFile(uri);
-    return new TextDecoder().decode(bytes);
-  }
-
-  function getRootPath(editor: vscode.TextEditor): string | undefined {
-    return (
-      getRootPathFromRunnablePath(editor.document.uri.path) ||
-      vscode.workspace.getWorkspaceFolder(editor.document.uri)?.uri.path
-    );
-  }
 
   async function refreshPanel(
     editor: vscode.TextEditor | undefined,
@@ -698,13 +680,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-function isArrayEqual(arr1: Uint8Array, arr2: Uint8Array): boolean {
-  if (arr1.length !== arr2.length) {
-    return false;
-  }
-
-  return arr1.every((value, index) => value === arr2[index]);
-}
 // This method is called when your extension is deactivated
 export function deactivate() {
   console.log("deactivated extension windmill");
