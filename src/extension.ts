@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import * as yaml from "js-yaml";
+import * as yaml from "yaml";
 import { extractCurrentMapping, extractInlineScripts } from "./flow";
 import { determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
@@ -145,7 +145,7 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         if (lang === "flow") {
           let uriPath = targetEditor?.document.uri.toString();
-          let flow = yaml.load(targetEditor?.document.getText()) as OpenFlow;
+          let flow = yaml.parse(targetEditor?.document.getText()) as OpenFlow;
           
           await replaceInlineScripts(flow?.value?.modules ?? [], uriPath);
 
@@ -165,7 +165,7 @@ export function activate(context: vscode.ExtensionContext) {
           );
           if (await fileExists(uri)) {
             const rd = await readTextFromUri(uri);
-            const config = (yaml.load(rd) as any) ?? {};
+            const config = (yaml.parse(rd) as any) ?? {};
             let nlock = config?.["lock"];
             if (
               nlock &&
@@ -317,7 +317,7 @@ export function activate(context: vscode.ExtensionContext) {
             try {
               if (lastFlowDocument) {
                 currentLoadedFlow = (
-                  yaml.load(lastFlowDocument?.getText() || "") as any
+                  yaml.parse(lastFlowDocument?.getText() || "") as any
                 )?.["value"]?.["modules"] as FlowModule[];
                 if (!Array.isArray(currentLoadedFlow)) {
                   currentLoadedFlow = undefined;
@@ -375,7 +375,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (JSON.stringify(message.flow) !== currentFlow) {
               let splitted = (lastFlowDocument?.getText() ?? "").split("\n");
               let edit = new vscode.WorkspaceEdit();
-              let text = yaml.dump(message.flow);
+              let text = yaml.stringify(message.flow);
               edit.replace(
                 lastFlowDocument.uri,
                 new vscode.Range(

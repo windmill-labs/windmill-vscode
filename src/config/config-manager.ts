@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import * as yaml from "js-yaml";
+import * as yaml from "yaml";
 import { minimatch } from "minimatch";
 import { fileExists, readTextFromUri } from "../utils/file-utils";
 import { Codebase } from "../extension";
@@ -74,7 +74,7 @@ export async function loadConfigForPath(
     let uriPath = vscode.Uri.parse(rootPath + "/" + path);
     if (await fileExists(uriPath)) {
       let content = await readTextFromUri(uriPath);
-      let config = (yaml.load(content) ?? {}) as any;
+      let config = (yaml.parse(content) ?? {}) as any;
       defaultTs = config?.["defaultTs"] ?? "bun";
       codebases = config?.["codebases"] ?? [];
       channel.appendLine(

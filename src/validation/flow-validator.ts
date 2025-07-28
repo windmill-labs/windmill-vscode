@@ -49,8 +49,6 @@ export class FlowValidator {
       // Validate with AJV
       const isValid = this.validate(parsedYaml);
 
-      console.log(this.validate.errors);
-      
       if (!isValid && this.validate.errors) {
         for (const error of this.validate.errors) {
           const diagnostic = this.createDiagnosticFromError(error, doc, lineCounter, document);
