@@ -179,6 +179,7 @@
     "webpack-cli": "^5.1.1"
   },
   "dependencies": {
+    "@stoplight/yaml": "^4.3.0",
     "ajv": "^8.17.1",
     "esbuild-wasm": "^0.23.0",
     "minimatch": "^9.0.4",
