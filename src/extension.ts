@@ -23,12 +23,14 @@ export type Codebase = {
   inject?: string[];
 };
 
+let flowDiagnosticProvider: FlowDiagnosticProvider | undefined = undefined;
+
 export function activate(context: vscode.ExtensionContext) {
   console.log("Windmill extension is now active");
 
   // Initialize flow validation diagnostics
   try {
-    const flowDiagnosticProvider = new FlowDiagnosticProvider();
+    flowDiagnosticProvider = new FlowDiagnosticProvider();
     flowDiagnosticProvider.activate(context);
   } catch (error) {
     console.error('Failed to initialize flow validation:', error);
@@ -430,5 +432,6 @@ export function activate(context: vscode.ExtensionContext) {
 // This method is called when your extension is deactivated
 export function deactivate() {
   console.log("deactivated extension windmill");
+  flowDiagnosticProvider?.dispose();
 }
 
