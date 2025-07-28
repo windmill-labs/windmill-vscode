@@ -6,6 +6,7 @@ import { FlowModule, OpenFlow } from "windmill-client";
 import { testBundle } from "./esbuild";
 import * as path from "path";
 import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
+import { replaceInlineScripts } from "./utils/inline-scripts";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
 import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
@@ -136,54 +137,8 @@ export function activate(context: vscode.ExtensionContext) {
         if (lang === "flow") {
           let uriPath = targetEditor?.document.uri.toString();
           let flow = yaml.load(targetEditor?.document.getText()) as OpenFlow;
-          async function replaceInlineScripts(modules: FlowModule[]) {
-            await Promise.all(
-              modules.map(async (m) => {
-                if (m.value.type === "rawscript") {
-                  const path = m.value.content.split(" ")[1];
-                  const fpath =
-                    uriPath.split("/").slice(0, -1).join("/") + "/" + path;
-                  let text = "";
-                  try {
-                    text = await readTextFromUri(vscode.Uri.parse(fpath));
-                  } catch (e) {}
-                  m.value.content = text;
-                  if (m.value.lock && m.value.lock?.startsWith("!inline ")) {
-                    const lockPath = m.value.lock.split(" ")[1];
-                    const fpath =
-                      uriPath.split("/").slice(0, -1).join("/") +
-                      "/" +
-                      lockPath;
-                    let text = "";
-                    try {
-                      text = await readTextFromUri(vscode.Uri.parse(fpath));
-                    } catch (e) {}
-                    m.value.lock = text;
-                  }
-                } else if (
-                  m.value.type === "forloopflow" ||
-                  m.value.type === "whileloopflow"
-                ) {
-                  await replaceInlineScripts(m.value.modules);
-                } else if (m.value.type === "branchall") {
-                  await Promise.all(
-                    m.value.branches.map(
-                      async (b) => await replaceInlineScripts(b.modules)
-                    )
-                  );
-                } else if (m.value.type === "branchone") {
-                  await Promise.all(
-                    m.value.branches.map(
-                      async (b) => await replaceInlineScripts(b.modules)
-                    )
-                  );
-                  await replaceInlineScripts(m.value.default);
-                }
-              })
-            );
-          }
-
-          await replaceInlineScripts(flow?.value?.modules ?? []);
+          
+          await replaceInlineScripts(flow?.value?.modules ?? [], uriPath);
 
           const message = {
             type: "replaceFlow",
