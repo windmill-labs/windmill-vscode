@@ -7,6 +7,7 @@ import { testBundle } from "./esbuild";
 import * as path from "path";
 import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
+import { setWorkspaceStatus, getCurrentWorkspaceConfig } from "./workspace/workspace-manager";
 
 export type Codebase = {
   assets?: {
@@ -50,10 +51,10 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(setWorkspaceStatus)
+    vscode.window.onDidChangeActiveTextEditor(() => setWorkspaceStatus(myStatusBarItem))
   );
   context.subscriptions.push(
-    vscode.window.onDidChangeTextEditorSelection(setWorkspaceStatus)
+    vscode.window.onDidChangeTextEditorSelection(() => setWorkspaceStatus(myStatusBarItem))
   );
 
   let lastActiveEditor: vscode.TextEditor | undefined = undefined;
@@ -360,7 +361,7 @@ export function activate(context: vscode.ExtensionContext) {
                   .getConfiguration("windmill")
                   ?.get("currentWorkspace")
             );
-            setWorkspaceStatus();
+            setWorkspaceStatus(myStatusBarItem);
 
             if (currentPanel) {
               currentPanel.webview.html = getWebviewContent();
@@ -371,17 +372,6 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  function setWorkspaceStatus() {
-    if (myStatusBarItem) {
-      const currentWorkspace =
-        vscode.workspace
-          .getConfiguration("windmill")
-          ?.get("currentWorkspace") ?? "main";
-
-      myStatusBarItem.text = `WM: ${currentWorkspace}`;
-      myStatusBarItem.show();
-    }
-  }
 
   async function start() {
     const tokenConf = vscode.workspace
@@ -612,25 +602,19 @@ export function deactivate() {
 }
 
 function getWebviewContent() {
-  const conf = vscode.workspace.getConfiguration("windmill");
-  const currentWorkspace = conf.get("currentWorkspace") ?? "main";
   let token: string;
   let workspace: string;
   let remoteUrl: string;
+  let currentWorkspace: string;
 
-  if (
-    currentWorkspace === "main" ||
-    currentWorkspace === "" ||
-    !currentWorkspace
-  ) {
-    token = conf.get("token") as string;
-    workspace = conf.get("workspaceId") as string;
-    remoteUrl = conf.get("remote") as string;
-  } else {
-    const remotes = conf.get("additionalWorkspaces") as any[];
-    const remote = remotes.find((r) => r.name === currentWorkspace);
-    if (!remote) {
-      return `<!DOCTYPE html>
+  try {
+    const config = getCurrentWorkspaceConfig();
+    token = config.token;
+    workspace = config.workspace;
+    remoteUrl = config.remoteUrl;
+    currentWorkspace = config.currentWorkspace;
+  } catch (error) {
+    return `<!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8">
@@ -639,17 +623,9 @@ function getWebviewContent() {
       </head>
 
       <body>
-        Invalid remote: ${currentWorkspace} not found among the additionalRemotes
+        ${(error as Error).message}
       </body>
       </html>`;
-    }
-    token = remote.token;
-    workspace = remote.workspaceId;
-    remoteUrl = remote.remote;
-  }
-
-  if (!remoteUrl.endsWith("/")) {
-    remoteUrl += "/";
   }
 
   vscode.window.showInformationMessage(
