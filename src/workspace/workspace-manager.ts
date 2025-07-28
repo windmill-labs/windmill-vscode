@@ -1,14 +1,21 @@
 import * as vscode from "vscode";
 
+let globalStatusBarItem: vscode.StatusBarItem | undefined = undefined;
+
+export function setGlobalStatusBarItem(item: vscode.StatusBarItem) {
+  globalStatusBarItem = item;
+}
+
 export function setWorkspaceStatus(myStatusBarItem?: vscode.StatusBarItem) {
-  if (myStatusBarItem) {
+  const statusBarItem = myStatusBarItem || globalStatusBarItem;
+  if (statusBarItem) {
     const currentWorkspace =
       vscode.workspace
         .getConfiguration("windmill")
         ?.get("currentWorkspace") ?? "main";
 
-    myStatusBarItem.text = `WM: ${currentWorkspace}`;
-    myStatusBarItem.show();
+    statusBarItem.text = `WM: ${currentWorkspace}`;
+    statusBarItem.show();
   }
 }
 

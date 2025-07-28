@@ -7,8 +7,9 @@ import { testBundle } from "./esbuild";
 import * as path from "path";
 import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
-import { setWorkspaceStatus } from "./workspace/workspace-manager";
+import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
+import { registerCommands } from "./commands/command-handlers";
 
 export type Codebase = {
   assets?: {
@@ -34,6 +35,7 @@ export function activate(context: vscode.ExtensionContext) {
     100
   );
   myStatusBarItem.command = switchRemoteId;
+  setGlobalStatusBarItem(myStatusBarItem);
   context.subscriptions.push(myStatusBarItem);
 
   context.subscriptions.push(
@@ -251,127 +253,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
 
-    setWorkspaceStatus();
+    setWorkspaceStatus(myStatusBarItem);
   }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.runPreview", async () => {
-      if (currentPanel === undefined) {
-        await start();
-      }
-      currentPanel?.webview.postMessage({ type: "runTest" });
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.setupConfiguration", () => {
-      vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        "windmill"
-      );
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.addWorkspace", () => {
-      vscode.window
-        .showInputBox({
-          prompt: "Enter the remote URL",
-          placeHolder: "https://app.windmill.dev/",
-        })
-        .then((remote) => {
-          vscode.window
-            .showInputBox({
-              prompt: "Enter workspace id",
-              placeHolder: "demo",
-            })
-            .then((workspaceId) => {
-              vscode.window
-                .showInputBox({
-                  prompt: "Enter user token",
-                })
-                .then(async (token) => {
-                  const conf = vscode.workspace.getConfiguration("windmill");
-                  if (conf.get("token") === "" || !conf.get("token")) {
-                    await conf.update("remote", remote, true);
-                    await conf.update("token", token, true);
-                    await conf.update("workspaceId", workspaceId, true);
-                    if (currentPanel) {
-                      currentPanel.webview.html = getWebviewContent();
-                    }
-                    refreshPanel(vscode.window.activeTextEditor, "init");
-                  } else {
-                    vscode.window
-                      .showInputBox({
-                        prompt: "Enter workspace name",
-                      })
-                      .then(async (name) => {
-                        const remotes = conf.get(
-                          "additionalWorkspaces"
-                        ) as string[];
-
-                        await conf.update(
-                          "additionalWorkspaces",
-                          [
-                            ...(remotes || []),
-                            { name, token, workspaceId, remote },
-                          ],
-                          true
-                        );
-                        await conf.update("currentWorkspace", name, false);
-                        if (currentPanel) {
-                          currentPanel.webview.html = getWebviewContent();
-                        }
-                        refreshPanel(vscode.window.activeTextEditor, "init2");
-                      });
-                  }
-                });
-            });
-        });
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(switchRemoteId, () => {
-      const remotes = (
-        (vscode.workspace
-          .getConfiguration("windmill")
-          .get("additionalWorkspaces") as any[]) ?? []
-      ).map((r: any) => r?.name ?? "unknown");
-      vscode.window
-        .showQuickPick(["main", ...remotes, "Add a remote"], {
-          canPickMany: false,
-        })
-        .then(async (value) => {
-          if (value === "Add a remote") {
-            vscode.commands.executeCommand("windmill.addWorkspace");
-            return;
-          } else {
-            vscode.window.showInformationMessage(
-              "Switching selected workspace to " + value
-            );
-            await vscode.workspace
-              .getConfiguration("windmill")
-              .update("currentWorkspace", value, true);
-            await vscode.workspace
-              .getConfiguration("windmill")
-              .update("currentWorkspace", value);
-            vscode.window.showInformationMessage(
-              "Switched to " +
-                vscode.workspace
-                  .getConfiguration("windmill")
-                  ?.get("currentWorkspace")
-            );
-            setWorkspaceStatus(myStatusBarItem);
-
-            if (currentPanel) {
-              currentPanel.webview.html = getWebviewContent();
-            }
-            refreshPanel(vscode.window.activeTextEditor, "init 3");
-          }
-        });
-    })
-  );
 
 
   async function start() {
@@ -566,35 +450,17 @@ export function activate(context: vscode.ExtensionContext) {
     refreshPanel(vscode.window.activeTextEditor, "start");
   }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.start", () => {
-      start();
-    })
+  // Register all commands
+  registerCommands(
+    context,
+    switchRemoteId,
+    () => currentPanel,
+    refreshPanel,
+    (uri) => { pinnedFileUri = uri; },
+    start
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.pinPreview", () => {
-      if (vscode.window.activeTextEditor) {
-        pinnedFileUri = vscode.window.activeTextEditor.document.uri;
-        if (currentPanel === undefined) {
-          start();
-        } else {
-          refreshPanel(vscode.window.activeTextEditor, "pinPreview");
-        }
-      }
-    })
-  );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.unpinPreview", () => {
-      pinnedFileUri = undefined;
-      if (currentPanel === undefined) {
-        // Do nothing
-      } else {
-        refreshPanel(vscode.window.activeTextEditor, "unpinPreview");
-      }
-    })
-  );
 }
 
 // This method is called when your extension is deactivated
