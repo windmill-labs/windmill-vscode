@@ -11,6 +11,7 @@ import { loadConfigForPath, findCodebase } from "./config/config-manager";
 import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
+import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
 
 export type Codebase = {
   assets?: {
@@ -24,6 +25,14 @@ export type Codebase = {
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("Windmill extension is now active");
+
+  // Initialize flow validation diagnostics
+  try {
+    const flowDiagnosticProvider = new FlowDiagnosticProvider();
+    flowDiagnosticProvider.activate(context);
+  } catch (error) {
+    console.error('Failed to initialize flow validation:', error);
+  }
 
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
   let myStatusBarItem: vscode.StatusBarItem | undefined = undefined;
