@@ -3,10 +3,10 @@ import * as yaml from "js-yaml";
 import { extractCurrentMapping, extractInlineScripts } from "./flow";
 import { determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
-import { minimatch } from "minimatch";
 import { testBundle } from "./esbuild";
 import * as path from "path";
 import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
+import { loadConfigForPath, findCodebase } from "./config/config-manager";
 
 export type Codebase = {
   assets?: {
@@ -62,55 +62,6 @@ export function activate(context: vscode.ExtensionContext) {
   let codebaseFound: Codebase | undefined = undefined;
   let pinnedFileUri: vscode.Uri | undefined = undefined;
 
-  function findCodebase(
-    path: string,
-    codebases: {
-      includes?: string | string[];
-      excludes?: string | string[];
-      assets?: {
-        from: string;
-        to: string;
-      }[];
-    }[]
-  ):
-    | {
-        assets?: {
-          from: string;
-          to: string;
-        }[];
-      }
-    | undefined {
-    for (const c of codebases) {
-      let included = false;
-      let excluded = false;
-      if (c.includes === undefined || c.includes === null) {
-        included = true;
-      }
-      if (typeof c.includes === "string") {
-        c.includes = [c.includes];
-      }
-      for (const r of c.includes ?? []) {
-        if (included) {
-          break;
-        }
-        if (minimatch(path, r)) {
-          included = true;
-        }
-      }
-      if (typeof c.excludes === "string") {
-        c.excludes = [c.excludes];
-      }
-      for (const r of c.excludes ?? []) {
-        if (minimatch(path, r)) {
-          excluded = true;
-        }
-      }
-      return included && !excluded ? c : undefined;
-    }
-    return undefined;
-  }
-
-
   async function refreshPanel(
     editor: vscode.TextEditor | undefined,
     rsn: string
@@ -153,7 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
     const targetPath = targetEditor?.document.uri.path;
 
     if (
-      !targetPath.includes(rootPath || "") ||
+      !rootPath || !targetPath.includes(rootPath) ||
       targetPath.endsWith(path.sep + "wmill.yaml")
     ) {
       return;
@@ -167,36 +118,11 @@ export function activate(context: vscode.ExtensionContext) {
     const wmPath = splitted[0];
 
     if (rsn === "changeActiveTextEditor" || rsn === "start") {
-      let splittedSlash = wmPath.split("/");
-      channel.appendLine("wmPath: " + wmPath + "|" + splittedSlash);
-      let found = false;
-      for (let i = 0; i < splittedSlash.length; i++) {
-        const path = splittedSlash.slice(0, i).join("/") + "/wmill.yaml";
-        channel.appendLine(
-          "checking if " + path + " exists: " + i + " " + splittedSlash.length
-        );
-        let uriPath = vscode.Uri.parse(rootPath + "/" + path);
-        if (await fileExists(uriPath)) {
-          let content = await readTextFromUri(uriPath);
-          let config = (yaml.load(content) ?? {}) as any;
-          lastDefaultTs = config?.["defaultTs"] ?? "bun";
-          codebaseFound = cpath.endsWith(".ts")
-            ? findCodebase(wmPath, config?.["codebases"] ?? [])
-            : undefined;
-          channel.appendLine(
-            path +
-              " exists! defaultTs: " +
-              lastDefaultTs +
-              ", isCodebase:" +
-              JSON.stringify(codebaseFound)
-          );
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        codebaseFound = undefined;
-      }
+      const configResult = await loadConfigForPath(wmPath, rootPath, channel);
+      lastDefaultTs = configResult.defaultTs;
+      codebaseFound = cpath.endsWith(".ts")
+        ? findCodebase(wmPath, configResult.codebases)
+        : undefined;
     }
 
     const lang = determineLanguage(cpath, lastDefaultTs);
