@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import * as yaml from "yaml";
-import { extractCurrentMapping, extractInlineScripts } from "./flow";
+import { extractCurrentMapping } from "./flow";
 import { determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 import { testBundle } from "./esbuild";
@@ -11,7 +11,7 @@ import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspac
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
 import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
-import { replaceInlineScripts } from "windmill-utils";
+import { replaceInlineScripts, extractInlineScripts } from "windmill-utils";
 
 export type Codebase = {
   assets?: {
@@ -341,7 +341,6 @@ export function activate(context: vscode.ExtensionContext) {
             );
             const allExtracted = extractInlineScripts(
               message?.flow?.value?.modules ?? [],
-              lastDefaultTs ?? "bun",
               inlineScriptMapping
             );
             await Promise.all(
