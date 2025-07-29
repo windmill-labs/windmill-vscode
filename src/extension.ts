@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import * as yaml from "yaml";
-import { extractCurrentMapping } from "./flow";
 import { determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 import { testBundle } from "./esbuild";
@@ -11,7 +10,7 @@ import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspac
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
 import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
-import { replaceInlineScripts, extractInlineScripts } from "windmill-utils";
+import { replaceInlineScripts, extractInlineScripts, extractCurrentMapping, FlowModule as FlowModuleUtils } from "windmill-utils";
 
 export type Codebase = {
   assets?: {
@@ -334,7 +333,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");
             let inlineScriptMapping = {};
-            extractCurrentMapping(currentLoadedFlow, inlineScriptMapping);
+            extractCurrentMapping(currentLoadedFlow as FlowModuleUtils[], inlineScriptMapping);
 
             channel.appendLine(
               "mapping: " + JSON.stringify(inlineScriptMapping)
