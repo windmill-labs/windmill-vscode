@@ -342,6 +342,7 @@ export function activate(context: vscode.ExtensionContext) {
             const allExtracted = extractInlineScripts(
               message?.flow?.value?.modules ?? [],
               lastDefaultTs ?? "bun",
+              undefined,
               inlineScriptMapping
             );
             await Promise.all(
