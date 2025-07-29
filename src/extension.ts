@@ -6,12 +6,12 @@ import { FlowModule, OpenFlow } from "windmill-client";
 import { testBundle } from "./esbuild";
 import * as path from "path";
 import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
-import { replaceInlineScripts } from "./utils/inline-scripts";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
 import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
 import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
+import { replaceInlineScripts } from "windmill-utils";
 
 export type Codebase = {
   assets?: {
@@ -148,8 +148,8 @@ export function activate(context: vscode.ExtensionContext) {
         if (lang === "flow") {
           let uriPath = targetEditor?.document.uri.toString();
           let flow = yaml.parse(targetEditor?.document.getText()) as OpenFlow;
-          
-          await replaceInlineScripts(flow?.value?.modules ?? [], uriPath);
+
+          await replaceInlineScripts(flow?.value?.modules, readTextFromUri, uriPath);
 
           const message = {
             type: "replaceFlow",
