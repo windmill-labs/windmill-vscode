@@ -10,7 +10,7 @@ import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspac
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
 import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
-import { replaceInlineScripts, extractInlineScripts, extractCurrentMapping } from "centdix-utils";
+import { replaceInlineScripts, extractInlineScripts, extractCurrentMapping } from "windmill-utils-internal";
 
 export type Codebase = {
   assets?: {
@@ -346,9 +346,6 @@ export function activate(context: vscode.ExtensionContext) {
             let inlineScriptMapping = {};
             extractCurrentMapping(currentLoadedFlow, inlineScriptMapping);
 
-            channel.appendLine(
-              "mapping: " + JSON.stringify(inlineScriptMapping)
-            );
             const allExtracted = extractInlineScripts(
               message?.flow?.value?.modules ?? [],
               inlineScriptMapping
@@ -399,6 +396,7 @@ export function activate(context: vscode.ExtensionContext) {
                 text
               );
               await vscode.workspace.applyEdit(edit);
+              await lastFlowDocument?.save();
               const dir = await vscode.workspace.fs.readDirectory(
                 vscode.Uri.parse(dirPath)
               );
