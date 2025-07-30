@@ -10,7 +10,7 @@ import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspac
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
 import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
-import { replaceInlineScripts, extractInlineScripts, extractCurrentMapping, FlowModule as FlowModuleUtils } from "windmill-utils";
+import { replaceInlineScripts, extractInlineScripts, extractCurrentMapping } from "centdix-utils";
 
 export type Codebase = {
   assets?: {
@@ -148,7 +148,18 @@ export function activate(context: vscode.ExtensionContext) {
           let uriPath = targetEditor?.document.uri.toString();
           let flow = yaml.parse(targetEditor?.document.getText()) as OpenFlow;
 
-          await replaceInlineScripts(flow?.value?.modules, readTextFromUri, uriPath);
+          await replaceInlineScripts(
+            flow?.value?.modules, 
+            async (path) => {
+              const fpath = uriPath.split("/").slice(0, -1).join("/") + "/" + path;
+              return await readTextFromUri(vscode.Uri.parse(fpath));
+            }, 
+            {
+              info: (...args: any[]) => channel.appendLine(args.join(" ")),
+              error: (...args: any[]) => channel.appendLine(args.join(" ")),
+            },
+            uriPath
+          );
 
           const message = {
             type: "replaceFlow",
@@ -333,7 +344,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");
             let inlineScriptMapping = {};
-            extractCurrentMapping(currentLoadedFlow as FlowModuleUtils[], inlineScriptMapping);
+            extractCurrentMapping(currentLoadedFlow, inlineScriptMapping);
 
             channel.appendLine(
               "mapping: " + JSON.stringify(inlineScriptMapping)
