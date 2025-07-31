@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import Ajv, { AnySchema, ErrorObject } from 'ajv';
 import { parseWithPointers, getLocationForJsonPath, YamlParserResult } from '@stoplight/yaml';
-import { openFlowSchema } from './openapi';
 
 // Simple implementation of json-pointer -> path conversion, mirroring @stoplight/json.pointerToPath
 function pointerToPath(pointer: string): string[] {
