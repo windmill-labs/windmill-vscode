@@ -76,6 +76,7 @@ export class FlowValidator {
 
   constructor(schema: any) {
     const addedSchemas = new Set<string>();
+    // fix disparency between what api gives and what is expected
     const stringified = JSON.stringify(schema)
     .replace(/schemas-InputTransform/g, "InputTransform")
     .replace(/("WhileloopFlow"[\s\S]*?"enum":\s*\[)"forloopflow"/, '$1"whileloopflow"')
