@@ -55,7 +55,6 @@ const addSchemaRecursively = (ajv: Ajv, schema: any, addedSchemas: Set<string>, 
   // Remove discriminator mappings from this specific schema, as it's not supported by Ajv
   removeDiscriminator(schemaCopy);
   
-  console.log("Adding schema:", schemaName, JSON.stringify(schemaCopy, null, 2));
   ajv.addSchema(schemaCopy as AnySchema, `#/components/schemas/${schemaName}`);
   
   // Extract refs from the original schema (before modification)
