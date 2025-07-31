@@ -77,8 +77,11 @@ export class FlowValidator {
     const addedSchemas = new Set<string>();
     // fix disparency between what api gives and what is expected
     const stringified = JSON.stringify(schema)
+    // rename schemas-InputTransform to InputTransform
     .replace(/schemas-InputTransform/g, "InputTransform")
+    // for whileloopflow, use whileloopflow instead of forloopflow as enum
     .replace(/("WhileloopFlow"[\s\S]*?"enum":\s*\[)"forloopflow"/, '$1"whileloopflow"')
+    // for statictransform, use static instead of javascript as enum and value instead of expr as required
     .replace(/("StaticTransform"[\s\S]*?"enum":\s*\[)"javascript"/, '$1"static"')
     .replace(/("StaticTransform"[\s\S]*?"required":\s*\[)"expr"/, '$1"value"');
     const toUse = JSON.parse(stringified);
