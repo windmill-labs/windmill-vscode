@@ -1,11 +1,15 @@
 import * as vscode from "vscode";
-import * as yaml from "js-yaml";
-import { extraCurrentMapping, extractInlineScripts } from "./flow";
-import { getRootPathFromRunnablePath, determineLanguage } from "./helpers";
+import * as yaml from "yaml";
+import { determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
-import { minimatch } from "minimatch";
 import { testBundle } from "./esbuild";
 import * as path from "path";
+import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
+import { loadConfigForPath, findCodebase } from "./config/config-manager";
+import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspace-manager";
+import { getWebviewContent } from "./webview/webview-manager";
+import { registerCommands } from "./commands/command-handlers";
+import { replaceInlineScripts, extractInlineScripts, extractCurrentMapping } from "windmill-utils-internal";
 
 export type Codebase = {
   assets?: {
@@ -16,6 +20,7 @@ export type Codebase = {
   define?: { [key: string]: string };
   inject?: string[];
 };
+
 export function activate(context: vscode.ExtensionContext) {
   console.log("Windmill extension is now active");
 
@@ -30,6 +35,7 @@ export function activate(context: vscode.ExtensionContext) {
     100
   );
   myStatusBarItem.command = switchRemoteId;
+  setGlobalStatusBarItem(myStatusBarItem);
   context.subscriptions.push(myStatusBarItem);
 
   context.subscriptions.push(
@@ -48,10 +54,10 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(setWorkspaceStatus)
+    vscode.window.onDidChangeActiveTextEditor(() => setWorkspaceStatus(myStatusBarItem))
   );
   context.subscriptions.push(
-    vscode.window.onDidChangeTextEditorSelection(setWorkspaceStatus)
+    vscode.window.onDidChangeTextEditorSelection(() => setWorkspaceStatus(myStatusBarItem))
   );
 
   let lastActiveEditor: vscode.TextEditor | undefined = undefined;
@@ -59,75 +65,6 @@ export function activate(context: vscode.ExtensionContext) {
   let lastDefaultTs: "deno" | "bun" = "bun";
   let codebaseFound: Codebase | undefined = undefined;
   let pinnedFileUri: vscode.Uri | undefined = undefined;
-
-  function findCodebase(
-    path: string,
-    codebases: {
-      includes?: string | string[];
-      excludes?: string | string[];
-      assets?: {
-        from: string;
-        to: string;
-      }[];
-    }[]
-  ):
-    | {
-        assets?: {
-          from: string;
-          to: string;
-        }[];
-      }
-    | undefined {
-    for (const c of codebases) {
-      let included = false;
-      let excluded = false;
-      if (c.includes === undefined || c.includes === null) {
-        included = true;
-      }
-      if (typeof c.includes === "string") {
-        c.includes = [c.includes];
-      }
-      for (const r of c.includes ?? []) {
-        if (included) {
-          break;
-        }
-        if (minimatch(path, r)) {
-          included = true;
-        }
-      }
-      if (typeof c.excludes === "string") {
-        c.excludes = [c.excludes];
-      }
-      for (const r of c.excludes ?? []) {
-        if (minimatch(path, r)) {
-          excluded = true;
-        }
-      }
-      return included && !excluded ? c : undefined;
-    }
-    return undefined;
-  }
-
-  async function fileExists(uri: vscode.Uri) {
-    try {
-      await vscode.workspace.fs.stat(uri);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  async function readTextFromUri(uri: vscode.Uri) {
-    const bytes = await vscode.workspace.fs.readFile(uri);
-    return new TextDecoder().decode(bytes);
-  }
-
-  function getRootPath(editor: vscode.TextEditor): string | undefined {
-    return (
-      getRootPathFromRunnablePath(editor.document.uri.path) ||
-      vscode.workspace.getWorkspaceFolder(editor.document.uri)?.uri.path
-    );
-  }
 
   async function refreshPanel(
     editor: vscode.TextEditor | undefined,
@@ -171,7 +108,7 @@ export function activate(context: vscode.ExtensionContext) {
     const targetPath = targetEditor?.document.uri.path;
 
     if (
-      !targetPath.includes(rootPath || "") ||
+      !rootPath || !targetPath.includes(rootPath) ||
       targetPath.endsWith(path.sep + "wmill.yaml")
     ) {
       return;
@@ -185,36 +122,11 @@ export function activate(context: vscode.ExtensionContext) {
     const wmPath = splitted[0];
 
     if (rsn === "changeActiveTextEditor" || rsn === "start") {
-      let splittedSlash = wmPath.split("/");
-      channel.appendLine("wmPath: " + wmPath + "|" + splittedSlash);
-      let found = false;
-      for (let i = 0; i < splittedSlash.length; i++) {
-        const path = splittedSlash.slice(0, i).join("/") + "/wmill.yaml";
-        channel.appendLine(
-          "checking if " + path + " exists: " + i + " " + splittedSlash.length
-        );
-        let uriPath = vscode.Uri.parse(rootPath + "/" + path);
-        if (await fileExists(uriPath)) {
-          let content = await readTextFromUri(uriPath);
-          let config = (yaml.load(content) ?? {}) as any;
-          lastDefaultTs = config?.["defaultTs"] ?? "bun";
-          codebaseFound = cpath.endsWith(".ts")
-            ? findCodebase(wmPath, config?.["codebases"] ?? [])
-            : undefined;
-          channel.appendLine(
-            path +
-              " exists! defaultTs: " +
-              lastDefaultTs +
-              ", isCodebase:" +
-              JSON.stringify(codebaseFound)
-          );
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        codebaseFound = undefined;
-      }
+      const configResult = await loadConfigForPath(wmPath, rootPath, channel);
+      lastDefaultTs = configResult.defaultTs;
+      codebaseFound = cpath.endsWith(".ts")
+        ? findCodebase(wmPath, configResult.codebases)
+        : undefined;
     }
 
     const lang = determineLanguage(cpath, lastDefaultTs);
@@ -223,55 +135,20 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         if (lang === "flow") {
           let uriPath = targetEditor?.document.uri.toString();
-          let flow = yaml.load(targetEditor?.document.getText()) as OpenFlow;
-          async function replaceInlineScripts(modules: FlowModule[]) {
-            await Promise.all(
-              modules.map(async (m) => {
-                if (m.value.type === "rawscript") {
-                  const path = m.value.content.split(" ")[1];
-                  const fpath =
-                    uriPath.split("/").slice(0, -1).join("/") + "/" + path;
-                  let text = "";
-                  try {
-                    text = await readTextFromUri(vscode.Uri.parse(fpath));
-                  } catch (e) {}
-                  m.value.content = text;
-                  if (m.value.lock && m.value.lock?.startsWith("!inline ")) {
-                    const lockPath = m.value.lock.split(" ")[1];
-                    const fpath =
-                      uriPath.split("/").slice(0, -1).join("/") +
-                      "/" +
-                      lockPath;
-                    let text = "";
-                    try {
-                      text = await readTextFromUri(vscode.Uri.parse(fpath));
-                    } catch (e) {}
-                    m.value.lock = text;
-                  }
-                } else if (
-                  m.value.type === "forloopflow" ||
-                  m.value.type === "whileloopflow"
-                ) {
-                  await replaceInlineScripts(m.value.modules);
-                } else if (m.value.type === "branchall") {
-                  await Promise.all(
-                    m.value.branches.map(
-                      async (b) => await replaceInlineScripts(b.modules)
-                    )
-                  );
-                } else if (m.value.type === "branchone") {
-                  await Promise.all(
-                    m.value.branches.map(
-                      async (b) => await replaceInlineScripts(b.modules)
-                    )
-                  );
-                  await replaceInlineScripts(m.value.default);
-                }
-              })
-            );
-          }
+          let flow = yaml.parse(targetEditor?.document.getText()) as OpenFlow;
 
-          await replaceInlineScripts(flow?.value?.modules ?? []);
+          await replaceInlineScripts(
+            flow?.value?.modules, 
+            async (path) => {
+              const fpath = uriPath.split("/").slice(0, -1).join("/") + "/" + path;
+              return await readTextFromUri(vscode.Uri.parse(fpath));
+            }, 
+            {
+              info: (...args: any[]) => channel.appendLine(args.join(" ")),
+              error: (...args: any[]) => channel.appendLine(args.join(" ")),
+            },
+            uriPath
+          );
 
           const message = {
             type: "replaceFlow",
@@ -289,7 +166,7 @@ export function activate(context: vscode.ExtensionContext) {
           );
           if (await fileExists(uri)) {
             const rd = await readTextFromUri(uri);
-            const config = (yaml.load(rd) as any) ?? {};
+            const config = (yaml.parse(rd) as any) ?? {};
             let nlock = config?.["lock"];
             if (
               nlock &&
@@ -341,139 +218,10 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
 
-    setWorkspaceStatus();
+    setWorkspaceStatus(myStatusBarItem);
   }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.runPreview", async () => {
-      if (currentPanel === undefined) {
-        await start();
-      }
-      currentPanel?.webview.postMessage({ type: "runTest" });
-    })
-  );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.setupConfiguration", () => {
-      vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        "windmill"
-      );
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.addWorkspace", () => {
-      vscode.window
-        .showInputBox({
-          prompt: "Enter the remote URL",
-          placeHolder: "https://app.windmill.dev/",
-        })
-        .then((remote) => {
-          vscode.window
-            .showInputBox({
-              prompt: "Enter workspace id",
-              placeHolder: "demo",
-            })
-            .then((workspaceId) => {
-              vscode.window
-                .showInputBox({
-                  prompt: "Enter user token",
-                })
-                .then(async (token) => {
-                  const conf = vscode.workspace.getConfiguration("windmill");
-                  if (conf.get("token") === "" || !conf.get("token")) {
-                    await conf.update("remote", remote, true);
-                    await conf.update("token", token, true);
-                    await conf.update("workspaceId", workspaceId, true);
-                    if (currentPanel) {
-                      currentPanel.webview.html = getWebviewContent();
-                    }
-                    refreshPanel(vscode.window.activeTextEditor, "init");
-                  } else {
-                    vscode.window
-                      .showInputBox({
-                        prompt: "Enter workspace name",
-                      })
-                      .then(async (name) => {
-                        const remotes = conf.get(
-                          "additionalWorkspaces"
-                        ) as string[];
-
-                        await conf.update(
-                          "additionalWorkspaces",
-                          [
-                            ...(remotes || []),
-                            { name, token, workspaceId, remote },
-                          ],
-                          true
-                        );
-                        await conf.update("currentWorkspace", name, false);
-                        if (currentPanel) {
-                          currentPanel.webview.html = getWebviewContent();
-                        }
-                        refreshPanel(vscode.window.activeTextEditor, "init2");
-                      });
-                  }
-                });
-            });
-        });
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(switchRemoteId, () => {
-      const remotes = (
-        (vscode.workspace
-          .getConfiguration("windmill")
-          .get("additionalWorkspaces") as any[]) ?? []
-      ).map((r: any) => r?.name ?? "unknown");
-      vscode.window
-        .showQuickPick(["main", ...remotes, "Add a remote"], {
-          canPickMany: false,
-        })
-        .then(async (value) => {
-          if (value === "Add a remote") {
-            vscode.commands.executeCommand("windmill.addWorkspace");
-            return;
-          } else {
-            vscode.window.showInformationMessage(
-              "Switching selected workspace to " + value
-            );
-            await vscode.workspace
-              .getConfiguration("windmill")
-              .update("currentWorkspace", value, true);
-            await vscode.workspace
-              .getConfiguration("windmill")
-              .update("currentWorkspace", value);
-            vscode.window.showInformationMessage(
-              "Switched to " +
-                vscode.workspace
-                  .getConfiguration("windmill")
-                  ?.get("currentWorkspace")
-            );
-            setWorkspaceStatus();
-
-            if (currentPanel) {
-              currentPanel.webview.html = getWebviewContent();
-            }
-            refreshPanel(vscode.window.activeTextEditor, "init 3");
-          }
-        });
-    })
-  );
-
-  function setWorkspaceStatus() {
-    if (myStatusBarItem) {
-      const currentWorkspace =
-        vscode.workspace
-          .getConfiguration("windmill")
-          ?.get("currentWorkspace") ?? "main";
-
-      myStatusBarItem.text = `WM: ${currentWorkspace}`;
-      myStatusBarItem.show();
-    }
-  }
 
   async function start() {
     const tokenConf = vscode.workspace
@@ -570,7 +318,7 @@ export function activate(context: vscode.ExtensionContext) {
             try {
               if (lastFlowDocument) {
                 currentLoadedFlow = (
-                  yaml.load(lastFlowDocument?.getText() || "") as any
+                  yaml.parse(lastFlowDocument?.getText() || "") as any
                 )?.["value"]?.["modules"] as FlowModule[];
                 if (!Array.isArray(currentLoadedFlow)) {
                   currentLoadedFlow = undefined;
@@ -585,16 +333,13 @@ export function activate(context: vscode.ExtensionContext) {
             }
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");
             let inlineScriptMapping = {};
-            extraCurrentMapping(currentLoadedFlow, inlineScriptMapping);
+            extractCurrentMapping(currentLoadedFlow, inlineScriptMapping);
 
-            channel.appendLine(
-              "mapping: " + JSON.stringify(inlineScriptMapping)
-            );
             const allExtracted = extractInlineScripts(
               message?.flow?.value?.modules ?? [],
-              lastDefaultTs ?? "bun",
-              undefined,
-              inlineScriptMapping
+              inlineScriptMapping,
+              "/",
+              lastDefaultTs ?? "bun"
             );
             await Promise.all(
               allExtracted.map(async (s) => {
@@ -629,7 +374,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (JSON.stringify(message.flow) !== currentFlow) {
               let splitted = (lastFlowDocument?.getText() ?? "").split("\n");
               let edit = new vscode.WorkspaceEdit();
-              let text = yaml.dump(message.flow);
+              let text = yaml.stringify(message.flow);
               edit.replace(
                 lastFlowDocument.uri,
                 new vscode.Range(
@@ -642,6 +387,7 @@ export function activate(context: vscode.ExtensionContext) {
                 text
               );
               await vscode.workspace.applyEdit(edit);
+              await lastFlowDocument?.save();
               const dir = await vscode.workspace.fs.readDirectory(
                 vscode.Uri.parse(dirPath)
               );
@@ -668,135 +414,21 @@ export function activate(context: vscode.ExtensionContext) {
     refreshPanel(vscode.window.activeTextEditor, "start");
   }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.start", () => {
-      start();
-    })
+  // Register all commands
+  registerCommands(
+    context,
+    switchRemoteId,
+    () => currentPanel,
+    refreshPanel,
+    (uri) => { pinnedFileUri = uri; },
+    start
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.pinPreview", () => {
-      if (vscode.window.activeTextEditor) {
-        pinnedFileUri = vscode.window.activeTextEditor.document.uri;
-        if (currentPanel === undefined) {
-          start();
-        } else {
-          refreshPanel(vscode.window.activeTextEditor, "pinPreview");
-        }
-      }
-    })
-  );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.unpinPreview", () => {
-      pinnedFileUri = undefined;
-      if (currentPanel === undefined) {
-        // Do nothing
-      } else {
-        refreshPanel(vscode.window.activeTextEditor, "unpinPreview");
-      }
-    })
-  );
 }
 
-function isArrayEqual(arr1: Uint8Array, arr2: Uint8Array): boolean {
-  if (arr1.length !== arr2.length) {
-    return false;
-  }
-
-  return arr1.every((value, index) => value === arr2[index]);
-}
 // This method is called when your extension is deactivated
 export function deactivate() {
   console.log("deactivated extension windmill");
 }
 
-function getWebviewContent() {
-  const conf = vscode.workspace.getConfiguration("windmill");
-  const currentWorkspace = conf.get("currentWorkspace") ?? "main";
-  let token: string;
-  let workspace: string;
-  let remoteUrl: string;
-
-  if (
-    currentWorkspace === "main" ||
-    currentWorkspace === "" ||
-    !currentWorkspace
-  ) {
-    token = conf.get("token") as string;
-    workspace = conf.get("workspaceId") as string;
-    remoteUrl = conf.get("remote") as string;
-  } else {
-    const remotes = conf.get("additionalWorkspaces") as any[];
-    const remote = remotes.find((r) => r.name === currentWorkspace);
-    if (!remote) {
-      return `<!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Windmill</title>
-      </head>
-
-      <body>
-        Invalid remote: ${currentWorkspace} not found among the additionalRemotes
-      </body>
-      </html>`;
-    }
-    token = remote.token;
-    workspace = remote.workspaceId;
-    remoteUrl = remote.remote;
-  }
-
-  if (!remoteUrl.endsWith("/")) {
-    remoteUrl += "/";
-  }
-
-  vscode.window.showInformationMessage(
-    `Starting Windmill with workspace ${currentWorkspace} on ${remoteUrl}dev`
-  );
-
-  return `<!DOCTYPE html>
-  <html lang="en">
-  <head>
-	  <meta charset="UTF-8">
-	  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-	  <title>Windmill</title>
-  </head>
-
-  <body>
-    <div id="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 20px;">
-      Loading ${currentWorkspace} on ${remoteUrl}dev...
-    </div>
-    <iframe id="iframe" src="${remoteUrl}dev?wm_token=${token}&workspace=${workspace}&activeColorTheme=${vscode.window.activeColorTheme.kind}" width="100%" style="border: none; height: 100vh;"></iframe>
-    <script>
-    const vscode = acquireVsCodeApi();
-    const iframe = document.getElementById('iframe');
-    const h1 = document.getElementById('foo');
-    const loading = document.getElementById('loading');
-
-    iframe.onload = function() {
-      setTimeout(() => {
-        loading.style.display = 'none'; 
-        iframe.style.display = 'block';  
-      }, 1000);
-    }
-
-    window.addEventListener('message', event => {
-        const message = event.data;
-        if (event.origin.startsWith('vscode-webview://')) {
-          iframe.contentWindow?.postMessage(message, '*');
-        } else {
-          if (message.type === 'keydown') {
-            window.dispatchEvent(new KeyboardEvent('keydown', JSON.parse(message.key)));
-          } else if (message.type === 'refresh') {
-            vscode.postMessage({ type: 'refresh' });
-          } else if (['flow', 'testBundle', 'testPreviewBundle'].includes(message.type)) {
-            vscode.postMessage(message);
-          } 
-        }
-    });
-  </script>
-  </body>
-  </html>`;
-}
