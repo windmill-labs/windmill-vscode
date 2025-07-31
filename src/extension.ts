@@ -1,17 +1,16 @@
 import * as vscode from "vscode";
 import * as yaml from "yaml";
-import { extractCurrentMapping, extractInlineScripts } from "./flow";
 import { determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 import { testBundle } from "./esbuild";
 import * as path from "path";
 import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
-import { replaceInlineScripts } from "./utils/inline-scripts";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
 import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
 import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
+import { replaceInlineScripts, extractInlineScripts, extractCurrentMapping } from "windmill-utils-internal";
 
 export type Codebase = {
   assets?: {
@@ -148,8 +147,19 @@ export function activate(context: vscode.ExtensionContext) {
         if (lang === "flow") {
           let uriPath = targetEditor?.document.uri.toString();
           let flow = yaml.parse(targetEditor?.document.getText()) as OpenFlow;
-          
-          await replaceInlineScripts(flow?.value?.modules ?? [], uriPath);
+
+          await replaceInlineScripts(
+            flow?.value?.modules, 
+            async (path) => {
+              const fpath = uriPath.split("/").slice(0, -1).join("/") + "/" + path;
+              return await readTextFromUri(vscode.Uri.parse(fpath));
+            }, 
+            {
+              info: (...args: any[]) => channel.appendLine(args.join(" ")),
+              error: (...args: any[]) => channel.appendLine(args.join(" ")),
+            },
+            uriPath
+          );
 
           const message = {
             type: "replaceFlow",
@@ -336,9 +346,6 @@ export function activate(context: vscode.ExtensionContext) {
             let inlineScriptMapping = {};
             extractCurrentMapping(currentLoadedFlow, inlineScriptMapping);
 
-            channel.appendLine(
-              "mapping: " + JSON.stringify(inlineScriptMapping)
-            );
             const allExtracted = extractInlineScripts(
               message?.flow?.value?.modules ?? [],
               lastDefaultTs ?? "bun",
@@ -391,6 +398,7 @@ export function activate(context: vscode.ExtensionContext) {
                 text
               );
               await vscode.workspace.applyEdit(edit);
+              await lastFlowDocument?.save();
               const dir = await vscode.workspace.fs.readDirectory(
                 vscode.Uri.parse(dirPath)
               );
