@@ -6,7 +6,7 @@ import { testBundle } from "./esbuild";
 import * as path from "path";
 import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
-import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspace-manager";
+import { setWorkspaceStatus, setGlobalStatusBarItem, getCurrentWorkspaceConfig } from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
 import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
@@ -22,6 +22,13 @@ export type Codebase = {
   inject?: string[];
 };
 
+async function getOpenApiSchema() {
+  const config = getCurrentWorkspaceConfig();
+  const remote = config.remoteUrl;
+  const response = await fetch(`${remote}api/openapi.json`);
+  return response.json();
+}
+
 let flowDiagnosticProvider: FlowDiagnosticProvider | undefined = undefined;
 
 export function activate(context: vscode.ExtensionContext) {
@@ -29,8 +36,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Initialize flow validation diagnostics
   try {
-    flowDiagnosticProvider = new FlowDiagnosticProvider();
-    flowDiagnosticProvider.activate(context);
+    getOpenApiSchema().then(schema => {
+      flowDiagnosticProvider = new FlowDiagnosticProvider(schema);
+      flowDiagnosticProvider.activate(context);
+    });
   } catch (error) {
     console.error('Failed to initialize flow validation:', error);
   }

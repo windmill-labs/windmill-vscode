@@ -1,14 +1,15 @@
 import * as vscode from 'vscode';
 import { FlowValidator } from './flow-validator';
+import { getCurrentWorkspaceConfig } from '../workspace/workspace-manager';
 
 export class FlowDiagnosticProvider {
   private diagnosticCollection: vscode.DiagnosticCollection;
   private validator: FlowValidator | null;
 
-  constructor() {
+  constructor(openApiSchema: any) {
     this.diagnosticCollection = vscode.languages.createDiagnosticCollection('openflow');
     try {
-      this.validator = new FlowValidator();
+      this.validator = new FlowValidator(openApiSchema);
     } catch (error) {
       console.error('Failed to initialize FlowValidator:', error);
       this.validator = null;
