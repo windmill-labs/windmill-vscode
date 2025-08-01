@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { FlowValidator } from "windmill-yaml-validator"
-import { ErrorObject } from 'ajv';
 import { getLocationForJsonPath, YamlParserResult } from '@stoplight/yaml';
 
 export class FlowDiagnosticProvider {
@@ -88,7 +87,7 @@ private pointerToPath(pointer: string): string[] {
 }
 
   private toDiagnostic(
-    err: ErrorObject,
+    err: any,
     ast: YamlParserResult<unknown>,
   ): vscode.Diagnostic {
     const path = this.pointerToPath(err.instancePath);
