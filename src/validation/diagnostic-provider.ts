@@ -1,13 +1,15 @@
 import * as vscode from 'vscode';
-import { validateFlow } from "windmill-utils-internal"
+import { FlowValidator } from "windmill-yaml-validator"
 import { ErrorObject } from 'ajv';
 import { getLocationForJsonPath, YamlParserResult } from '@stoplight/yaml';
 
 export class FlowDiagnosticProvider {
   private diagnosticCollection: vscode.DiagnosticCollection;
+  private validator: FlowValidator;
 
   constructor() {
     this.diagnosticCollection = vscode.languages.createDiagnosticCollection('openflow');
+    this.validator = new FlowValidator();
   }
 
   public activate(context: vscode.ExtensionContext) {
@@ -67,7 +69,7 @@ export class FlowDiagnosticProvider {
 
   private validateDocument(document: vscode.TextDocument) {    
     try {
-      const { parsed, errors } = validateFlow(document.getText());
+      const { parsed, errors } = this.validator.validateFlow(document.getText());
       const diagnostics = errors.map(error => this.toDiagnostic(error, parsed));
       this.diagnosticCollection.set(document.uri, diagnostics);
     } catch (error) {
