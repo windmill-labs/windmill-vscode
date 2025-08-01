@@ -1,18 +1,13 @@
 import * as vscode from 'vscode';
-import { FlowValidator } from './flow-validator';
+import { validateFlow } from "windmill-utils-internal"
+import { ErrorObject } from 'ajv';
+import { getLocationForJsonPath, YamlParserResult } from '@stoplight/yaml';
 
 export class FlowDiagnosticProvider {
   private diagnosticCollection: vscode.DiagnosticCollection;
-  private validator: FlowValidator | null;
 
   constructor() {
     this.diagnosticCollection = vscode.languages.createDiagnosticCollection('openflow');
-    try {
-      this.validator = new FlowValidator();
-    } catch (error) {
-      console.error('Failed to initialize FlowValidator:', error);
-      this.validator = null;
-    }
   }
 
   public activate(context: vscode.ExtensionContext) {
@@ -62,27 +57,50 @@ export class FlowDiagnosticProvider {
     );
   }
 
+  public dispose() {
+    this.diagnosticCollection.dispose();
+  }
+
   private isFlowYamlFile(document: vscode.TextDocument): boolean {
     return document.uri.path.endsWith('.flow.yaml') || document.uri.path.endsWith('flow.yaml');
   }
 
-  private validateDocument(document: vscode.TextDocument) {
-    if (!this.validator) {
-      // If validator failed to initialize, skip validation
-      return;
-    }
-    
+  private validateDocument(document: vscode.TextDocument) {    
     try {
-      const diagnostics = this.validator.validateFlow(document);
+      const { parsed, errors } = validateFlow(document.getText());
+      const diagnostics = errors.map(error => this.toDiagnostic(error, parsed));
       this.diagnosticCollection.set(document.uri, diagnostics);
     } catch (error) {
       console.error('Error validating flow document:', error);
-      // Clear diagnostics on error to avoid stale diagnostics
       this.diagnosticCollection.delete(document.uri);
     }
   }
 
-  public dispose() {
-    this.diagnosticCollection.dispose();
+  // Simple implementation of json-pointer -> path conversion, mirroring @stoplight/json.pointerToPath
+private pointerToPath(pointer: string): string[] {
+  if (!pointer) return [];
+  return pointer
+    .split('/')
+    .slice(1) // remove empty first element resulting from leading '/'
+    .map(segment => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
+}
+
+  private toDiagnostic(
+    err: ErrorObject,
+    ast: YamlParserResult<unknown>,
+  ): vscode.Diagnostic {
+    const path = this.pointerToPath(err.instancePath);
+    const loc = getLocationForJsonPath(ast, path, true); // 'closest' never returns null
+    if (!loc) throw new Error('No location found');
+    const start = new vscode.Position(loc.range.start.line, loc.range.start.character);
+    const end   = new vscode.Position(loc.range.end.line,   loc.range.end.character);
+    const range = new vscode.Range(start, end);
+
+    const msg =
+      err.keyword === 'enum'
+        ? `Value must be one of: ${(err.params as any).allowedValues.join(', ')}`
+        : err.message ?? 'schema error';
+
+    return new vscode.Diagnostic(range, msg, vscode.DiagnosticSeverity.Error);
   }
 }
