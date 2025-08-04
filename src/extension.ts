@@ -238,7 +238,10 @@ export function activate(context: vscode.ExtensionContext) {
     const tokenConf = vscode.workspace
       .getConfiguration("windmill")
       .get("token") as string;
-    if (tokenConf === "" || !tokenConf) {
+
+    // try to get config from CLI if no config, or if sync is enabled
+    const useCLIConfig = vscode.workspace.getConfiguration("windmill").get("useCLIConfig") as boolean;
+    if (tokenConf === "" || !tokenConf || useCLIConfig) {
       let gotFromCLI = false;
       try {
         const workspaces = getCLIWorkspaces();
@@ -248,6 +251,7 @@ export function activate(context: vscode.ExtensionContext) {
             return;
           }
           const {remote, workspaceId, token} = active;
+          await vscode.workspace.getConfiguration("windmill").update("useCLIConfig", true, vscode.ConfigurationTarget.Global);
           await vscode.workspace.getConfiguration("windmill").update("remote", remote, vscode.ConfigurationTarget.Global);
           await vscode.workspace.getConfiguration("windmill").update("workspaceId", workspaceId, vscode.ConfigurationTarget.Global);
           await vscode.workspace.getConfiguration("windmill").update("token", token, vscode.ConfigurationTarget.Global);
@@ -268,7 +272,7 @@ export function activate(context: vscode.ExtensionContext) {
         console.error("error getting workspaces from CLI", e);
       }
 
-      if (!gotFromCLI) {
+      if (!gotFromCLI && (!tokenConf || tokenConf === "")) {
         await vscode.commands.executeCommand(
           "workbench.action.openSettings",
           "windmill"

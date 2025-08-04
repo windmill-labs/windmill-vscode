@@ -86,26 +86,32 @@
     "configuration": {
       "title": "Windmill",
       "properties": {
+        "windmill.useCLIConfig": {
+          "type": "boolean",
+          "default": true,
+          "description": "Try to sync extension config with Windmill CLI config.",
+          "order": 0
+        },
         "windmill.remote": {
           "type": "string",
           "default": "https://app.windmill.dev/",
           "description": "The full remote url including http and trailing slash",
-          "order": 0
+          "order": 1
         },
         "windmill.workspaceId": {
           "type": "string",
           "default": null,
           "description": "The workspace id to use",
-          "order": 1
+          "order": 2
         },
         "windmill.token": {
           "type": "string",
           "default": null,
           "description": "The user token to use",
-          "order": 2
+          "order": 3
         },
         "windmill.additionalWorkspaces": {
-          "order": 3,
+          "order": 4,
           "type": "array",
           "description": "The list of additional remotes to use",
           "items": {
@@ -138,7 +144,7 @@
           "type": "string",
           "description": "The workspace name currently used (if multiple). `main` or empty is the default one",
           "default": "main",
-          "order": 4
+          "order": 5
         }
       }
     }
