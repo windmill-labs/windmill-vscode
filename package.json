@@ -86,32 +86,26 @@
     "configuration": {
       "title": "Windmill",
       "properties": {
-        "windmill.cliConfigFolder": {
-          "type": "string",
-          "default": "",
-          "description": "The folder where the Windmill CLI config is stored. Use wmill config -p to get the path. If not set, the extension will not try to sync with the CLI config.",
-          "order": 0
-        },
         "windmill.remote": {
           "type": "string",
           "default": "https://app.windmill.dev/",
           "description": "The full remote url including http and trailing slash",
-          "order": 1
+          "order": 0
         },
         "windmill.workspaceId": {
           "type": "string",
           "default": null,
           "description": "The workspace id to use",
-          "order": 2
+          "order": 1
         },
         "windmill.token": {
           "type": "string",
           "default": null,
           "description": "The user token to use",
-          "order": 3
+          "order": 2
         },
         "windmill.additionalWorkspaces": {
-          "order": 4,
+          "order": 3,
           "type": "array",
           "description": "The list of additional remotes to use",
           "items": {
@@ -144,6 +138,12 @@
           "type": "string",
           "description": "The workspace name currently used (if multiple). `main` or empty is the default one",
           "default": "main",
+          "order": 4
+        },
+        "windmill.configFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Override the default config folder for the Windmill CLI.",
           "order": 5
         }
       }

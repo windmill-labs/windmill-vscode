@@ -1,5 +1,5 @@
-import { execSync } from "child_process";
 import * as vscode from "vscode";
+import { getWorkspaceConfigFilePath, getActiveWorkspaceConfigFilePath } from "windmill-utils-internal";
 import * as fs from "fs";
 
 let globalStatusBarItem: vscode.StatusBarItem | undefined = undefined;
@@ -11,28 +11,18 @@ type Workspace = {
   token: string;
 }
 
-export function getCLIConfigPath(): string {
+export async function getWorkspacesFromConfig(configFolder?: string): Promise<{ workspaces: Workspace[], active: string }> {
   try {
-    const result = execSync('wmill config -p');
-    return result.toString().trim();
-  } catch (error) {
-    console.error('error getting cli config path', error);
-    return "";
-  }
-}
-
-export function getWorkspacesFromCLIConfig(cliConfigFolder?: string): { workspaces: Workspace[], active: string, configPath: string } {
-  try {
-    const path = cliConfigFolder && cliConfigFolder.length > 0 ? cliConfigFolder : getCLIConfigPath();
-    // add final slash if not present
-    const configPath = path.endsWith("/") ? path : path + "/";
-    const config = fs.readFileSync(configPath + "remotes.ndjson", "utf8");
-    const active = fs.readFileSync(configPath + "activeWorkspace", "utf8");
-    const workspaces = config.split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line));
-    return { workspaces, active, configPath: path };
+    const folder = configFolder && configFolder.length > 0 ? configFolder : undefined;
+    const workspacePath = await getWorkspaceConfigFilePath(folder);
+    const activeWorkspacePath = await getActiveWorkspaceConfigFilePath(folder);
+    const workspacesConfig = fs.readFileSync(workspacePath, "utf8");
+    const activeWorkspaceConfig = fs.readFileSync(activeWorkspacePath, "utf8");
+    const workspaces = workspacesConfig.split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line));
+    return { workspaces, active: activeWorkspaceConfig };
   } catch (error) {
     console.error('error getting workspaces from cli config', error);
-    return { workspaces: [], active: "", configPath: "" };
+    return { workspaces: [], active: "" };
   }
 }
 
