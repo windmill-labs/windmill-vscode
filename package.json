@@ -86,10 +86,10 @@
     "configuration": {
       "title": "Windmill",
       "properties": {
-        "windmill.useCLIConfig": {
-          "type": "boolean",
-          "default": true,
-          "description": "Try to sync extension config with Windmill CLI config.",
+        "windmill.cliConfigFolder": {
+          "type": "string",
+          "default": "",
+          "description": "The folder where the Windmill CLI config is stored. Use wmill config -p to get the path. If not set, the extension will not try to sync with the CLI config.",
           "order": 0
         },
         "windmill.remote": {

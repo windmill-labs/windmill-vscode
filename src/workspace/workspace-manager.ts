@@ -1,5 +1,6 @@
 import { execSync } from "child_process";
 import * as vscode from "vscode";
+import * as fs from "fs";
 
 let globalStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 
@@ -8,18 +9,30 @@ type Workspace = {
   remote: string;
   workspaceId: string;
   token: string;
-  isActive: boolean;
 }
 
-export function getCLIWorkspaces(): Workspace[] {
+export function getCLIConfigPath(): string {
   try {
-    const result = execSync('wmill config');
-    const resultString = result.toString().trim();
-    const workspaces = JSON.parse(resultString);
-    return workspaces
+    const result = execSync('wmill config -p');
+    return result.toString().trim();
   } catch (error) {
-    console.error('error getting cli workspaces', error);
-    return [];
+    console.error('error getting cli config path', error);
+    return "";
+  }
+}
+
+export function getWorkspacesFromCLIConfig(cliConfigFolder?: string): { workspaces: Workspace[], active: string, configPath: string } {
+  try {
+    const path = cliConfigFolder && cliConfigFolder.length > 0 ? cliConfigFolder : getCLIConfigPath();
+    // add final slash if not present
+    const configPath = path.endsWith("/") ? path : path + "/";
+    const config = fs.readFileSync(configPath + "remotes.ndjson", "utf8");
+    const active = fs.readFileSync(configPath + "activeWorkspace", "utf8");
+    const workspaces = config.split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line));
+    return { workspaces, active, configPath: path };
+  } catch (error) {
+    console.error('error getting workspaces from cli config', error);
+    return { workspaces: [], active: "", configPath: "" };
   }
 }
 

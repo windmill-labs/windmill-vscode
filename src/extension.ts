@@ -6,7 +6,7 @@ import { testBundle } from "./esbuild";
 import * as path from "path";
 import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
-import { setWorkspaceStatus, setGlobalStatusBarItem, getCLIWorkspaces } from "./workspace/workspace-manager";
+import { setWorkspaceStatus, setGlobalStatusBarItem, getWorkspacesFromCLIConfig } from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
 import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
@@ -232,30 +232,28 @@ export function activate(context: vscode.ExtensionContext) {
     setWorkspaceStatus(myStatusBarItem);
   }
 
-
-
   async function start() {
     const tokenConf = vscode.workspace
       .getConfiguration("windmill")
       .get("token") as string;
 
     // try to get config from CLI if no config, or if sync is enabled
-    const useCLIConfig = vscode.workspace.getConfiguration("windmill").get("useCLIConfig") as boolean;
-    if (tokenConf === "" || !tokenConf || useCLIConfig) {
+    const cliConfigFolder = vscode.workspace.getConfiguration("windmill").get("cliConfigFolder") as string;
+    if (tokenConf === "" || !tokenConf || cliConfigFolder) {
       let gotFromCLI = false;
       try {
-        const workspaces = getCLIWorkspaces();
+        const {workspaces, active, configPath} = getWorkspacesFromCLIConfig(cliConfigFolder);
         if (workspaces.length > 0) {
-          const active = workspaces.find((w: any) => w.isActive);
-          if (!active) {
+          const activeWorkspace = workspaces.find((w: any) => w.name === active);
+          if (!activeWorkspace) {
             return;
           }
-          const {remote, workspaceId, token} = active;
-          await vscode.workspace.getConfiguration("windmill").update("useCLIConfig", true, vscode.ConfigurationTarget.Global);
+          const {remote, workspaceId, token} = activeWorkspace;
+          await vscode.workspace.getConfiguration("windmill").update("cliConfigFolder", configPath, vscode.ConfigurationTarget.Global);
           await vscode.workspace.getConfiguration("windmill").update("remote", remote, vscode.ConfigurationTarget.Global);
           await vscode.workspace.getConfiguration("windmill").update("workspaceId", workspaceId, vscode.ConfigurationTarget.Global);
           await vscode.workspace.getConfiguration("windmill").update("token", token, vscode.ConfigurationTarget.Global);
-          await vscode.workspace.getConfiguration("windmill").update("currentWorkspace", active.name, vscode.ConfigurationTarget.Global);
+          await vscode.workspace.getConfiguration("windmill").update("currentWorkspace", active, vscode.ConfigurationTarget.Global);
           await vscode.workspace.getConfiguration("windmill").update(
             "additionalWorkspaces",
             workspaces.map((w) => (
