@@ -13,7 +13,7 @@ type Workspace = {
 
 export function getCLIWorkspaces(): Workspace[] {
   try {
-    const result = execSync('node /Users/farhad/Desktop/windmill/cli/npm/esm/src/main.js config');
+    const result = execSync('wmill config');
     const resultString = result.toString().trim();
     const workspaces = JSON.parse(resultString);
     return workspaces
