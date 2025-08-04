@@ -6,7 +6,7 @@ import { testBundle } from "./esbuild";
 import * as path from "path";
 import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
-import { setWorkspaceStatus, setGlobalStatusBarItem } from "./workspace/workspace-manager";
+import { setWorkspaceStatus, setGlobalStatusBarItem, getCLIWorkspaces } from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
 import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
@@ -239,14 +239,45 @@ export function activate(context: vscode.ExtensionContext) {
       .getConfiguration("windmill")
       .get("token") as string;
     if (tokenConf === "" || !tokenConf) {
-      await vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        "windmill"
-      );
-      vscode.window.showInformationMessage(
-        "Configure your token (fetch from your account settings) and workspace first (the workspace id, not the name)"
-      );
-      return;
+      let gotFromCLI = false;
+      try {
+        const workspaces = getCLIWorkspaces();
+        if (workspaces.length > 0) {
+          const active = workspaces.find((w: any) => w.isActive);
+          if (!active) {
+            return;
+          }
+          const {remote, workspaceId, token} = active;
+          await vscode.workspace.getConfiguration("windmill").update("remote", remote, vscode.ConfigurationTarget.Global);
+          await vscode.workspace.getConfiguration("windmill").update("workspaceId", workspaceId, vscode.ConfigurationTarget.Global);
+          await vscode.workspace.getConfiguration("windmill").update("token", token, vscode.ConfigurationTarget.Global);
+          await vscode.workspace.getConfiguration("windmill").update("currentWorkspace", active.name, vscode.ConfigurationTarget.Global);
+          await vscode.workspace.getConfiguration("windmill").update(
+            "additionalWorkspaces",
+            workspaces.map((w) => (
+              {name: w.name, remote: w.remote, workspaceId: w.workspaceId, token: w.token}
+            )),
+            vscode.ConfigurationTarget.Global
+          );
+          vscode.window.showInformationMessage(
+            "Workspace configuration updated from CLI config"
+          );
+          gotFromCLI = true;
+        }
+      } catch (e) {
+        console.error("error getting workspaces from CLI", e);
+      }
+
+      if (!gotFromCLI) {
+        await vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          "windmill"
+        );
+        vscode.window.showInformationMessage(
+          "Configure your token (fetch from your account settings) and workspace first (the workspace id, not the name)"
+        );
+        return;
+      }
     }
 
     if (currentPanel) {

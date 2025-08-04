@@ -1,6 +1,27 @@
+import { execSync } from "child_process";
 import * as vscode from "vscode";
 
 let globalStatusBarItem: vscode.StatusBarItem | undefined = undefined;
+
+type Workspace = {
+  name: string;
+  remote: string;
+  workspaceId: string;
+  token: string;
+  isActive: boolean;
+}
+
+export function getCLIWorkspaces(): Workspace[] {
+  try {
+    const result = execSync('node /Users/farhad/Desktop/windmill/cli/npm/esm/src/main.js config');
+    const resultString = result.toString().trim();
+    const workspaces = JSON.parse(resultString);
+    return workspaces
+  } catch (error) {
+    console.error('error getting cli workspaces', error);
+    return [];
+  }
+}
 
 export function setGlobalStatusBarItem(item: vscode.StatusBarItem) {
   globalStatusBarItem = item;
