@@ -139,6 +139,12 @@
           "description": "The workspace name currently used (if multiple). `main` or empty is the default one",
           "default": "main",
           "order": 4
+        },
+        "windmill.configFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Override the default config folder for the Windmill CLI.",
+          "order": 5
         }
       }
     }
@@ -184,7 +190,7 @@
     "minimatch": "^9.0.4",
     "tar-stream": "^3.1.7",
     "windmill-client": "^1.514.1",
-    "windmill-utils-internal": "^1.0.0",
+    "windmill-utils-internal": "^1.0.1",
     "windmill-yaml-validator": "^1.0.0",
     "yaml": "^2.8.0"
   }

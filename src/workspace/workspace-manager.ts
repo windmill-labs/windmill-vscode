@@ -1,6 +1,30 @@
 import * as vscode from "vscode";
+import { getWorkspaceConfigFilePath, getActiveWorkspaceConfigFilePath } from "windmill-utils-internal";
+import * as fs from "fs";
 
 let globalStatusBarItem: vscode.StatusBarItem | undefined = undefined;
+
+type Workspace = {
+  name: string;
+  remote: string;
+  workspaceId: string;
+  token: string;
+}
+
+export async function getWorkspacesFromConfig(configFolder?: string): Promise<{ workspaces: Workspace[], active: string }> {
+  try {
+    const folder = configFolder && configFolder.length > 0 ? configFolder : undefined;
+    const workspacePath = await getWorkspaceConfigFilePath(folder);
+    const activeWorkspacePath = await getActiveWorkspaceConfigFilePath(folder);
+    const workspacesConfig = fs.readFileSync(workspacePath, "utf8");
+    const activeWorkspaceConfig = fs.readFileSync(activeWorkspacePath, "utf8");
+    const workspaces = workspacesConfig.split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line));
+    return { workspaces, active: activeWorkspaceConfig };
+  } catch (error) {
+    console.error('error getting workspaces from cli config', error);
+    return { workspaces: [], active: "" };
+  }
+}
 
 export function setGlobalStatusBarItem(item: vscode.StatusBarItem) {
   globalStatusBarItem = item;
