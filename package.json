@@ -190,7 +190,7 @@
     "minimatch": "^9.0.4",
     "tar-stream": "^3.1.7",
     "windmill-client": "^1.514.1",
-    "windmill-utils-internal": "^1.0.0",
+    "windmill-utils-internal": "^1.0.1",
     "windmill-yaml-validator": "^1.0.0",
     "yaml": "^2.8.0"
   }
