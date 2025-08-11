@@ -38,6 +38,9 @@ const webExtensionConfig = {
       assert: require.resolve("assert"),
       // Add the path polyfill
       path: require.resolve("path-browserify"),
+      buffer: require.resolve("buffer/"),
+      fs: false,
+      "fs/promises": false,
     },
   },
   module: {
@@ -59,6 +62,7 @@ const webExtensionConfig = {
     }),
     new webpack.ProvidePlugin({
       process: "process/browser", // provide a shim for the global `process` variable
+      Buffer: ["buffer", "Buffer"], // provide a shim for the global `Buffer` variable
     }),
   ],
   externals: {
