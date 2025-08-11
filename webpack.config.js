@@ -38,6 +38,8 @@ const webExtensionConfig = {
       assert: require.resolve("assert"),
       // Add the path polyfill
       path: require.resolve("path-browserify"),
+      fs: false,
+      "fs/promises": false,
     },
   },
   module: {

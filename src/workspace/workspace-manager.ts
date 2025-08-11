@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import { getWorkspaceConfigFilePath, getActiveWorkspaceConfigFilePath } from "windmill-utils-internal";
-import * as fs from "fs";
 
 let globalStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 
@@ -12,7 +11,15 @@ type Workspace = {
 }
 
 export async function getWorkspacesFromConfig(configFolder?: string): Promise<{ workspaces: Workspace[], active: string }> {
+  // Check if running in web environment
+  if (typeof process === 'undefined' || !process.versions || !process.versions.node) {
+    // Web environment - return empty config
+    console.log('Running in web environment, skipping file system operations');
+    return { workspaces: [], active: "" };
+  }
+  
   try {
+    const fs = await import('fs');
     const folder = configFolder && configFolder.length > 0 ? configFolder : undefined;
     const workspacePath = await getWorkspaceConfigFilePath(folder);
     const activeWorkspacePath = await getActiveWorkspaceConfigFilePath(folder);
