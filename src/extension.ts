@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as yaml from "yaml";
 import { determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
-import { testBundle } from "./esbuild";
+import { testBundle } from "./esbuild.web";
 import * as path from "path";
 import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
