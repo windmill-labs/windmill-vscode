@@ -4,13 +4,26 @@ import { determineLanguage } from "./helpers";
 import { FlowModule, OpenFlow } from "windmill-client";
 import { testBundle } from "./esbuild";
 import * as path from "path";
-import { fileExists, readTextFromUri, getRootPath, isArrayEqual } from "./utils/file-utils";
+import {
+  fileExists,
+  readTextFromUri,
+  getRootPath,
+  isArrayEqual,
+} from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
-import { setWorkspaceStatus, setGlobalStatusBarItem, getWorkspacesFromConfig } from "./workspace/workspace-manager";
+import {
+  setWorkspaceStatus,
+  setGlobalStatusBarItem,
+  getWorkspacesFromConfig,
+} from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
 import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
-import { replaceInlineScripts, extractInlineScripts, extractCurrentMapping } from "windmill-utils-internal";
+import {
+  replaceInlineScripts,
+  extractInlineScripts,
+  extractCurrentMapping,
+} from "windmill-utils-internal";
 
 export type Codebase = {
   assets?: {
@@ -20,6 +33,7 @@ export type Codebase = {
   external?: [];
   define?: { [key: string]: string };
   inject?: string[];
+  format?: "cjs" | "esm";
 };
 
 let flowDiagnosticProvider: FlowDiagnosticProvider | undefined = undefined;
@@ -32,7 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
     flowDiagnosticProvider = new FlowDiagnosticProvider();
     flowDiagnosticProvider.activate(context);
   } catch (error) {
-    console.error('Failed to initialize flow validation:', error);
+    console.error("Failed to initialize flow validation:", error);
   }
 
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
@@ -65,10 +79,14 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(() => setWorkspaceStatus(myStatusBarItem))
+    vscode.window.onDidChangeActiveTextEditor(() =>
+      setWorkspaceStatus(myStatusBarItem)
+    )
   );
   context.subscriptions.push(
-    vscode.window.onDidChangeTextEditorSelection(() => setWorkspaceStatus(myStatusBarItem))
+    vscode.window.onDidChangeTextEditorSelection(() =>
+      setWorkspaceStatus(myStatusBarItem)
+    )
   );
 
   let lastActiveEditor: vscode.TextEditor | undefined = undefined;
@@ -119,7 +137,8 @@ export function activate(context: vscode.ExtensionContext) {
     const targetPath = targetEditor?.document.uri.path;
 
     if (
-      !rootPath || !targetPath.includes(rootPath) ||
+      !rootPath ||
+      !targetPath.includes(rootPath) ||
       targetPath.endsWith(path.sep + "wmill.yaml")
     ) {
       return;
@@ -149,11 +168,12 @@ export function activate(context: vscode.ExtensionContext) {
           let flow = yaml.parse(targetEditor?.document.getText()) as OpenFlow;
 
           await replaceInlineScripts(
-            flow?.value?.modules, 
+            flow?.value?.modules,
             async (path) => {
-              const fpath = uriPath.split("/").slice(0, -1).join("/") + "/" + path;
+              const fpath =
+                uriPath.split("/").slice(0, -1).join("/") + "/" + path;
               return await readTextFromUri(vscode.Uri.parse(fpath));
-            }, 
+            },
             {
               info: (...args: any[]) => channel.appendLine(args.join(" ")),
               error: (...args: any[]) => channel.appendLine(args.join(" ")),
@@ -239,23 +259,46 @@ export function activate(context: vscode.ExtensionContext) {
 
     let gotFromConfig = false;
     try {
-      const folderOverride = vscode.workspace.getConfiguration("windmill").get("configFolder") as string;
-      const { workspaces, active } = await getWorkspacesFromConfig(folderOverride);
+      const folderOverride = vscode.workspace
+        .getConfiguration("windmill")
+        .get("configFolder") as string;
+      const { workspaces, active } = await getWorkspacesFromConfig(
+        folderOverride
+      );
       if (workspaces.length > 0) {
         const activeWorkspace = workspaces.find((w: any) => w.name === active);
         if (!activeWorkspace) {
           return;
         }
-        const {remote, workspaceId, token} = activeWorkspace;
-        await vscode.workspace.getConfiguration("windmill").update("remote", remote, vscode.ConfigurationTarget.Global);
-        await vscode.workspace.getConfiguration("windmill").update("workspaceId", workspaceId, vscode.ConfigurationTarget.Global);
-        await vscode.workspace.getConfiguration("windmill").update("token", token, vscode.ConfigurationTarget.Global);
-        await vscode.workspace.getConfiguration("windmill").update("currentWorkspace", active, vscode.ConfigurationTarget.Global);
+        const { remote, workspaceId, token } = activeWorkspace;
+        await vscode.workspace
+          .getConfiguration("windmill")
+          .update("remote", remote, vscode.ConfigurationTarget.Global);
+        await vscode.workspace
+          .getConfiguration("windmill")
+          .update(
+            "workspaceId",
+            workspaceId,
+            vscode.ConfigurationTarget.Global
+          );
+        await vscode.workspace
+          .getConfiguration("windmill")
+          .update("token", token, vscode.ConfigurationTarget.Global);
+        await vscode.workspace
+          .getConfiguration("windmill")
+          .update(
+            "currentWorkspace",
+            active,
+            vscode.ConfigurationTarget.Global
+          );
         await vscode.workspace.getConfiguration("windmill").update(
           "additionalWorkspaces",
-          workspaces.map((w) => (
-            {name: w.name, remote: w.remote, workspaceId: w.workspaceId, token: w.token}
-          )),
+          workspaces.map((w) => ({
+            name: w.name,
+            remote: w.remote,
+            workspaceId: w.workspaceId,
+            token: w.token,
+          })),
           vscode.ConfigurationTarget.Global
         );
         vscode.window.showInformationMessage(
@@ -327,7 +370,7 @@ export function activate(context: vscode.ExtensionContext) {
               channel.appendLine,
               codebaseFound,
               lastActiveEditor ? getRootPath(lastActiveEditor) : undefined,
-              "cjs",
+              codebaseFound?.format ?? "cjs",
               "node",
               message.type,
               (x) => {
@@ -460,11 +503,11 @@ export function activate(context: vscode.ExtensionContext) {
     switchRemoteId,
     () => currentPanel,
     refreshPanel,
-    (uri) => { pinnedFileUri = uri; },
+    (uri) => {
+      pinnedFileUri = uri;
+    },
     start
   );
-
-
 }
 
 // This method is called when your extension is deactivated
@@ -472,4 +515,3 @@ export function deactivate() {
   console.log("deactivated extension windmill");
   flowDiagnosticProvider?.dispose();
 }
-

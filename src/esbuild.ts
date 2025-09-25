@@ -76,7 +76,7 @@ export async function testBundle(
         define: codebase?.define,
         platform: platform,
         packages: "bundle",
-        target: platform === "node" ? "node20.15.1" : undefined,
+        target: platform === "node" && format === "cjs" ? "node20.15.1" : "esnext",
       })
     ).outputFiles[0].text;
 
@@ -87,7 +87,7 @@ export async function testBundle(
           codebase.assets
         )}`
       );
-      const tarblob = await createTarFromStrings(out, codebase, rootPath);
+      const tarblob = await createTarFromStrings(out, codebase, rootPath, appendLine);
       out = tarblob.toString("base64");
 
       // vscode.workspace.fs.writeFile(
@@ -104,6 +104,7 @@ export async function testBundle(
       id: id,
       file: out,
       isTar,
+      format
     });
     appendLine("sent");
   } catch (e) {
@@ -119,7 +120,8 @@ export async function testBundle(
 async function createTarFromStrings(
   out: string,
   codebase: Codebase,
-  rootPath: string | undefined
+  rootPath: string | undefined,
+  appendLine: (s: string) => void
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     (async () => {
@@ -132,6 +134,7 @@ async function createTarFromStrings(
           const data = await vscode.workspace.fs.readFile(
             vscode.Uri.file((rootPath ? rootPath + "/" : "") + asset.from)
           );
+          appendLine(`Found asset at ${asset.from} with size ${data.length} bytes`)
           let buffer = Buffer.from(data);
           tarball.entry(
             {
