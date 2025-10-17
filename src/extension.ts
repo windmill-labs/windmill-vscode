@@ -185,6 +185,7 @@ export function activate(context: vscode.ExtensionContext) {
             type: "replaceFlow",
             flow,
             uriPath,
+            path: wmPath,
           };
 
           lastFlowDocument = targetEditor?.document;
