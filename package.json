@@ -12,7 +12,7 @@
   },
   "icon": "windmill.png",
   "publisher": "windmill-labs",
-  "version": "0.2.46",
+  "version": "0.2.47",
   "engines": {
     "vscode": "^1.79.0"
   },
