@@ -2,6 +2,16 @@ import * as vscode from "vscode";
 import { setWorkspaceStatus } from "../workspace/workspace-manager";
 import { getWebviewContent } from "../webview/webview-manager";
 
+function isValidUrl(urlString: string) {
+  let url;
+  try {
+    url = new URL(urlString);
+  } catch (e) {
+    return false;
+  }
+  return url.protocol === "http:" || url.protocol === "https:";
+}
+
 export function registerCommands(
   context: vscode.ExtensionContext,
   switchRemoteId: string,
@@ -29,61 +39,93 @@ export function registerCommands(
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("windmill.addWorkspace", () => {
-      vscode.window
-        .showInputBox({
+    vscode.commands.registerCommand("windmill.addWorkspace", async () => {
+      let remote: string | undefined;
+      while (true) {
+        remote = await vscode.window.showInputBox({
           prompt: "Enter the remote URL",
-          placeHolder: "https://app.windmill.dev/",
-        })
-        .then((remote) => {
-          vscode.window
-            .showInputBox({
-              prompt: "Enter workspace id",
-              placeHolder: "demo",
-            })
-            .then((workspaceId) => {
-              vscode.window
-                .showInputBox({
-                  prompt: "Enter user token",
-                })
-                .then(async (token) => {
-                  const conf = vscode.workspace.getConfiguration("windmill");
-                  if (conf.get("token") === "" || !conf.get("token")) {
-                    await conf.update("remote", remote, true);
-                    await conf.update("token", token, true);
-                    await conf.update("workspaceId", workspaceId, true);
-                    if (currentPanel()) {
-                      currentPanel()!.webview.html = getWebviewContent();
-                    }
-                    refreshPanel(vscode.window.activeTextEditor, "init");
-                  } else {
-                    vscode.window
-                      .showInputBox({
-                        prompt: "Enter workspace name",
-                      })
-                      .then(async (name) => {
-                        const remotes = conf.get(
-                          "additionalWorkspaces"
-                        ) as string[];
-
-                        await conf.update(
-                          "additionalWorkspaces",
-                          [
-                            ...(remotes || []),
-                            { name, token, workspaceId, remote },
-                          ],
-                          true
-                        );
-                        await conf.update("currentWorkspace", name, false);
-                        if (currentPanel()) {
-                          currentPanel()!.webview.html = getWebviewContent();
-                        }
-                        refreshPanel(vscode.window.activeTextEditor, "init2");
-                      });
-                  }
-                });
-            });
+          placeHolder: "https://api.windmill.dev",
+          ignoreFocusOut: true,
         });
+        if (remote === undefined) {
+          // User pressed Esc, exit
+          return;
+        }
+        if (isValidUrl(remote)) {
+          break;
+        }
+        vscode.window.showErrorMessage("Please enter a valid remote URL.");
+      }
+
+      let workspaceId: string | undefined;
+      while (true) {
+        workspaceId = await vscode.window.showInputBox({
+          prompt: "Enter workspace id",
+          placeHolder: "demo",
+          ignoreFocusOut: true,
+        });
+        if (workspaceId === undefined) {
+          // User pressed Esc, exit
+          return;
+        }
+        if (workspaceId.trim() !== "") {
+          break;
+        }
+        vscode.window.showErrorMessage("Workspace ID is required.");
+      }
+
+      let token: string | undefined;
+      while (true) {
+        token = await vscode.window.showInputBox({
+          prompt: "Enter user token",
+          ignoreFocusOut: true,
+        });
+        if (token === undefined) {
+          // User pressed Esc, exit
+          return;
+        }
+        if (token.trim() !== "") {
+          break;
+        }
+        vscode.window.showErrorMessage("User token is required.");
+      }
+      const conf = vscode.workspace.getConfiguration("windmill");
+      if (conf.get("token") === "" || !conf.get("token")) {
+        await conf.update("remote", remote, true);
+        await conf.update("token", token, true);
+        await conf.update("workspaceId", workspaceId, true);
+        if (currentPanel()) {
+          currentPanel()!.webview.html = getWebviewContent();
+        }
+        refreshPanel(vscode.window.activeTextEditor, "init");
+      } else {
+        let name: string | undefined;
+        while (true) {
+          name = await vscode.window.showInputBox({
+            prompt: "Enter workspace name",
+            ignoreFocusOut: true,
+          });
+          if (name === undefined) {
+            // User pressed Esc, exit
+            return;
+          }
+          if (name.trim() !== "") {
+            break;
+          }
+          vscode.window.showErrorMessage("Workspace name is required.");
+        }
+        const remotes = conf.get("additionalWorkspaces") as string[];
+        await conf.update(
+          "additionalWorkspaces",
+          [...(remotes || []), { name, token, workspaceId, remote }],
+          true
+        );
+        await conf.update("currentWorkspace", name, false);
+        if (currentPanel()) {
+          currentPanel()!.webview.html = getWebviewContent();
+        }
+        refreshPanel(vscode.window.activeTextEditor, "init2");
+      }
     })
   );
 
