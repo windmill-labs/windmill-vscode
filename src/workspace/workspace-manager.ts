@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { getWorkspaceConfigFilePath, getActiveWorkspaceConfigFilePath } from "windmill-utils-internal";
-import { GitBranchConfig } from "../config/config-manager";
+import { GitBranchConfig, loadConfigForPath } from "../config/config-manager";
+import { getCurrentGitBranch } from "../utils/git-utils";
 
 let globalStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 
@@ -92,6 +93,57 @@ export function getCurrentWorkspaceConfig(): {
     remoteUrl,
     currentWorkspace: currentWorkspace as string,
   };
+}
+
+/**
+ * Check the current git branch and switch workspace if configured
+ * @param channel Output channel for logging
+ * @param cachedGitBranchConfig Optional cached gitBranches config to avoid reloading
+ * @returns Object with switched status and loaded config for caching
+ */
+export async function checkAndSwitchWorkspaceForGitBranch(
+  channel: vscode.OutputChannel,
+  cachedGitBranchConfig?: GitBranchConfig
+): Promise<{ switched: boolean; config?: GitBranchConfig }> {
+  try {
+    // Get current git branch
+    const currentBranch = await getCurrentGitBranch();
+    if (!currentBranch) {
+      channel.appendLine("No git branch detected or not in a git repository");
+      return { switched: false };
+    }
+
+    channel.appendLine(`Current git branch: ${currentBranch}`);
+
+    let gitBranches = cachedGitBranchConfig;
+
+    // If we don't have the config cached yet, load it
+    if (!gitBranches) {
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      if (!workspaceFolders || workspaceFolders.length === 0) {
+        channel.appendLine("No workspace folder found");
+        return { switched: false };
+      }
+
+      const rootPath = workspaceFolders[0].uri.toString();
+      // Call loadConfigForPath with empty string to check root wmill.yaml
+      const config = await loadConfigForPath("", rootPath, channel);
+      gitBranches = config.gitBranches;
+    }
+
+    if (!gitBranches) {
+      channel.appendLine("No gitBranches configuration found in wmill.yaml");
+      return { switched: false, config: undefined };
+    }
+
+    // Switch workspace based on branch
+    const switched = await switchWorkspaceForBranch(currentBranch, gitBranches, channel);
+    return { switched, config: gitBranches };
+  } catch (error) {
+    channel.appendLine(`Error checking git branch for workspace switch: ${error}`);
+    console.error("Error checking git branch:", error);
+    return { switched: false };
+  }
 }
 
 /**
