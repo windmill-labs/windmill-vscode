@@ -265,21 +265,16 @@ export function activate(context: vscode.ExtensionContext) {
     try {
       // Step 1: Sync CLI config to VSCode
       channel.appendLine("Syncing CLI workspace configuration...");
-      const { workspaces: cliWorkspaces } = await syncVSCodeConfigFromCLI(channel);
+      await syncVSCodeConfigFromCLI(channel);
 
       // Step 2: Apply git branch settings if configured
-      if (cliWorkspaces.length > 0) {
-        channel.appendLine("Checking git branch for workspace switch...");
-        const result = await checkAndSwitchWorkspaceForGitBranch(
-          channel,
-          lastGitBranchConfig,
-          cliWorkspaces
-        );
-        if (result.config) {
-          lastGitBranchConfig = result.config;
-        }
-      } else {
-        channel.appendLine("No CLI workspaces found, skipping git branch check");
+      channel.appendLine("Checking git branch for workspace switch...");
+      const result = await checkAndSwitchWorkspaceForGitBranch(
+        channel,
+        lastGitBranchConfig
+      );
+      if (result.config) {
+        lastGitBranchConfig = result.config;
       }
 
       // Step 3: Setup git watcher
@@ -322,20 +317,19 @@ export function activate(context: vscode.ExtensionContext) {
       gitHeadWatcher.onDidChange(async () => {
         channel.appendLine("Git HEAD changed, re-syncing config and checking for workspace switch");
         // Re-sync CLI config before checking branch
-        const { workspaces: cliWorkspaces } = await syncVSCodeConfigFromCLI(channel);
-        if (cliWorkspaces.length > 0) {
-          const result = await checkAndSwitchWorkspaceForGitBranch(channel, lastGitBranchConfig, cliWorkspaces);
-          if (result.config) {
-            lastGitBranchConfig = result.config;
-          }
+        await syncVSCodeConfigFromCLI(channel);
+        
+        const result = await checkAndSwitchWorkspaceForGitBranch(channel, lastGitBranchConfig);
+        if (result.config) {
+          lastGitBranchConfig = result.config;
+        }
 
-          // Refresh the panel if it's open and workspace was switched
-          if (result.switched && currentPanel) {
-            channel.appendLine("Refreshing panel with new workspace configuration");
-            currentPanel.webview.html = getWebviewContent();
-            if (lastActiveEditor) {
-              refreshPanel(lastActiveEditor, "workspace switch from git branch");
-            }
+        // Refresh the panel if it's open and workspace was switched
+        if (result.switched && currentPanel) {
+          channel.appendLine("Refreshing panel with new workspace configuration");
+          currentPanel.webview.html = getWebviewContent();
+          if (lastActiveEditor) {
+            refreshPanel(lastActiveEditor, "workspace switch from git branch");
           }
         }
       });
@@ -344,21 +338,20 @@ export function activate(context: vscode.ExtensionContext) {
       gitHeadWatcher.onDidCreate(async () => {
         channel.appendLine("Git HEAD created, re-syncing config and checking for workspace switch");
         // Re-sync CLI config before checking branch
-        const { workspaces: cliWorkspaces } = await syncVSCodeConfigFromCLI(channel);
-        if (cliWorkspaces.length > 0) {
-          const result = await checkAndSwitchWorkspaceForGitBranch(channel, lastGitBranchConfig, cliWorkspaces);
-          if (result.config) {
-            lastGitBranchConfig = result.config;
+        await syncVSCodeConfigFromCLI(channel);
+        
+        const result = await checkAndSwitchWorkspaceForGitBranch(channel, lastGitBranchConfig);
+        if (result.config) {
+          lastGitBranchConfig = result.config;
+        }
+        
+        // Refresh the panel if it's open and workspace was switched
+        if (result.switched && currentPanel) {
+          channel.appendLine("Refreshing panel with new workspace configuration");
+          currentPanel.webview.html = getWebviewContent();
+          if (lastActiveEditor) {
+            refreshPanel(lastActiveEditor, "workspace switch from git branch");
           }
-          // Refresh the panel if it's open and workspace was switched
-          if (result.switched && currentPanel) {
-            channel.appendLine("Refreshing panel with new workspace configuration");
-            currentPanel.webview.html = getWebviewContent();
-            if (lastActiveEditor) {
-              refreshPanel(lastActiveEditor, "workspace switch from git branch");
-            }
-          }
-          
         }
       });
 
@@ -381,24 +374,19 @@ export function activate(context: vscode.ExtensionContext) {
     try {
       // Step 1: Sync CLI config to VSCode
       channel.appendLine("Syncing CLI workspace configuration...");
-      const { workspaces: cliWorkspaces, synced } = await syncVSCodeConfigFromCLI(channel);
+      const { synced } = await syncVSCodeConfigFromCLI(channel);
       gotFromConfig = synced;
 
       // Step 2: Apply git branch settings if configured
-      if (cliWorkspaces.length > 0) {
-        channel.appendLine("Checking git branch for workspace switch...");
-        const gitBranchResult = await checkAndSwitchWorkspaceForGitBranch(
-          channel,
-          lastGitBranchConfig,
-          cliWorkspaces
-        );
-        if (gitBranchResult.config) {
-          lastGitBranchConfig = gitBranchResult.config;
-        }
-        channel.appendLine(`Git branch workspace switch: ${gitBranchResult.switched}`);
-      } else {
-        channel.appendLine("No CLI workspaces found, skipping git branch check");
+      channel.appendLine("Checking git branch for workspace switch...");
+      const gitBranchResult = await checkAndSwitchWorkspaceForGitBranch(
+        channel,
+        lastGitBranchConfig
+      );
+      if (gitBranchResult.config) {
+        lastGitBranchConfig = gitBranchResult.config;
       }
+      channel.appendLine(`Git branch workspace switch: ${gitBranchResult.switched}`);
     } catch (e) {
       console.error("error getting workspaces from config", e);
       channel.appendLine(`Error syncing workspace config: ${e}`);
