@@ -363,7 +363,6 @@ export function activate(context: vscode.ExtensionContext) {
     try {
       // First check if we should use git branch-based workspace switching
       let gitBranchWorkspaceSwitch = await checkAndSwitchWorkspaceForGitBranch();
-      channel.appendLine(`Git branch workspace switch: ${gitBranchWorkspaceSwitch}`);
 
       // Only use CLI config if git branch config is not applicable
       if (!gitBranchWorkspaceSwitch) {
