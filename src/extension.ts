@@ -265,7 +265,7 @@ export function activate(context: vscode.ExtensionContext) {
       const currentBranch = await getCurrentGitBranch();
       if (!currentBranch) {
         channel.appendLine("No git branch detected or not in a git repository");
-        return;
+        return false;
       }
 
       channel.appendLine(`Current git branch: ${currentBranch}`);
@@ -277,7 +277,7 @@ export function activate(context: vscode.ExtensionContext) {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
           channel.appendLine("No workspace folder found");
-          return;
+          return false;
         }
 
         const rootPath = workspaceFolders[0].uri.toString();
@@ -289,14 +289,15 @@ export function activate(context: vscode.ExtensionContext) {
 
       if (!gitBranches) {
         channel.appendLine("No gitBranches configuration found in wmill.yaml");
-        return;
+        return false;
       }
 
       // Switch workspace based on branch
-      await switchWorkspaceForBranch(currentBranch, gitBranches, channel);
+      return await switchWorkspaceForBranch(currentBranch, gitBranches, channel);
     } catch (error) {
       channel.appendLine(`Error checking git branch for workspace switch: ${error}`);
       console.error("Error checking git branch:", error);
+      return false;
     }
   }
 
@@ -361,18 +362,11 @@ export function activate(context: vscode.ExtensionContext) {
     let gotFromConfig = false;
     try {
       // First check if we should use git branch-based workspace switching
-      let shouldUseGitBranch = false;
-      
-      if (lastGitBranchConfig) {
-        const currentBranch = await getCurrentGitBranch();
-        if (currentBranch && lastGitBranchConfig[currentBranch]) {
-          shouldUseGitBranch = true;
-          channel.appendLine("Git branch config exists and is active, skipping CLI config workspace switching");
-        }
-      }
+      let gitBranchWorkspaceSwitch = await checkAndSwitchWorkspaceForGitBranch();
+      channel.appendLine(`Git branch workspace switch: ${gitBranchWorkspaceSwitch}`);
 
       // Only use CLI config if git branch config is not applicable
-      if (!shouldUseGitBranch) {
+      if (!gitBranchWorkspaceSwitch) {
         const folderOverride = vscode.workspace
           .getConfiguration("windmill")
           .get("configFolder") as string;
