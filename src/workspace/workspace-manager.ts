@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { getWorkspaceConfigFilePath, getActiveWorkspaceConfigFilePath } from "windmill-utils-internal";
+import { GitBranchConfig } from "../config/config-manager";
 
 let globalStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 
@@ -91,4 +92,76 @@ export function getCurrentWorkspaceConfig(): {
     remoteUrl,
     currentWorkspace: currentWorkspace as string,
   };
+}
+
+/**
+ * Switch workspace based on git branch configuration
+ * @param branchName The current git branch name
+ * @param gitBranchConfig The gitBranches configuration from wmill.yaml
+ * @param channel Optional output channel for logging
+ * @returns true if workspace was switched, false otherwise
+ */
+export async function switchWorkspaceForBranch(
+  branchName: string,
+  gitBranchConfig: GitBranchConfig | undefined,
+  channel?: vscode.OutputChannel
+): Promise<boolean> {
+  if (!gitBranchConfig || !branchName) {
+    channel?.appendLine(`No git branch config or branch name provided. Skipping workspace switch.`);
+    return false;
+  }
+
+  const branchWorkspace = gitBranchConfig[branchName];
+  if (!branchWorkspace) {
+    channel?.appendLine(`No workspace configuration found for branch: ${branchName}. Keeping current workspace.`);
+    return false;
+  }
+
+  try {
+    const { baseUrl, workspaceId } = branchWorkspace;
+    
+    if (!baseUrl || !workspaceId) {
+      channel?.appendLine(`Invalid workspace configuration for branch ${branchName}. Missing baseUrl or workspaceId.`);
+      return false;
+    }
+
+    const conf = vscode.workspace.getConfiguration("windmill");
+    
+    // Normalize the base URL to ensure it ends with /
+    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+
+    // Check if this workspace exists in additionalWorkspaces
+    const additionalWorkspaces = (conf.get("additionalWorkspaces") as any[]) || [];
+    const existingWorkspace = additionalWorkspaces.find(
+      (w: any) => w.remote === normalizedBaseUrl && w.workspaceId === workspaceId
+    );
+
+    if (!existingWorkspace) {
+      // Add the new workspace
+      const newWorkspace = {
+        name: workspaceId,
+        remote: normalizedBaseUrl,
+        workspaceId: workspaceId,
+        token: conf.get("token"),
+      };
+
+      const updatedWorkspaces = [...additionalWorkspaces, newWorkspace];
+      await conf.update("additionalWorkspaces", updatedWorkspaces, vscode.ConfigurationTarget.Global);
+      channel?.appendLine(`Created new additional workspace "${workspaceId}"`);
+    }
+
+    await conf.update("currentWorkspace", workspaceId, vscode.ConfigurationTarget.Global);
+    channel?.appendLine(`Switched to workspace "${workspaceId}" for branch: ${branchName}`);
+    vscode.window.showInformationMessage(
+      `Switched to workspace "${workspaceId}"`
+    );
+    setWorkspaceStatus();
+    return true;
+  } catch (error) {
+    channel?.appendLine(`Error switching workspace for branch ${branchName}: ${error}`);
+    vscode.window.showErrorMessage(
+      `Failed to switch Windmill workspace for git branch "${branchName}": ${error}`
+    );
+    return false;
+  }
 }

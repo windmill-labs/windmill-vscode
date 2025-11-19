@@ -4,6 +4,13 @@ import { minimatch } from "minimatch";
 import { fileExists, readTextFromUri } from "../utils/file-utils";
 import { Codebase } from "../extension";
 
+export type GitBranchConfig = {
+  [branchName: string]: {
+    baseUrl: string;
+    workspaceId: string;
+  };
+};
+
 export function findCodebase(
   path: string,
   codebases: {
@@ -59,12 +66,14 @@ export async function loadConfigForPath(
 ): Promise<{
   defaultTs: "deno" | "bun";
   codebases: any[];
+  gitBranches?: GitBranchConfig;
 }> {
   let splittedSlash = wmPath.split("/");
   channel.appendLine("wmPath: " + wmPath + "|" + splittedSlash);
   let found = false;
   let defaultTs: "deno" | "bun" = "bun";
   let codebases: any[] = [];
+  let gitBranches: GitBranchConfig | undefined = undefined;
 
   for (let i = 0; i < splittedSlash.length; i++) {
     const path = splittedSlash.slice(0, i).join("/") + "/wmill.yaml";
@@ -77,12 +86,15 @@ export async function loadConfigForPath(
       let config = (yaml.parse(content) ?? {}) as any;
       defaultTs = config?.["defaultTs"] ?? "bun";
       codebases = config?.["codebases"] ?? [];
+      gitBranches = config?.["gitBranches"];
       channel.appendLine(
         path +
           " exists! defaultTs: " +
           defaultTs +
           ", codebases:" +
-          JSON.stringify(codebases)
+          JSON.stringify(codebases) +
+          ", gitBranches:" +
+          JSON.stringify(gitBranches)
       );
       found = true;
       break;
@@ -93,5 +105,5 @@ export async function loadConfigForPath(
     codebases = [];
   }
 
-  return { defaultTs, codebases };
+  return { defaultTs, codebases, gitBranches };
 }

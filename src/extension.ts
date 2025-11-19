@@ -15,6 +15,7 @@ import {
   setWorkspaceStatus,
   setGlobalStatusBarItem,
   getWorkspacesFromConfig,
+  switchWorkspaceForBranch,
 } from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
@@ -24,6 +25,8 @@ import {
   extractInlineScripts,
   extractCurrentMapping,
 } from "windmill-utils-internal";
+import { getCurrentGitBranch, getGitHeadPath } from "./utils/git-utils";
+import { GitBranchConfig } from "./config/config-manager";
 
 export type Codebase = {
   assets?: {
@@ -94,6 +97,8 @@ export function activate(context: vscode.ExtensionContext) {
   let lastDefaultTs: "deno" | "bun" = "bun";
   let codebaseFound: Codebase | undefined = undefined;
   let pinnedFileUri: vscode.Uri | undefined = undefined;
+  let lastGitBranchConfig: GitBranchConfig | undefined = undefined;
+  let gitHeadWatcher: vscode.FileSystemWatcher | undefined = undefined;
 
   async function refreshPanel(
     editor: vscode.TextEditor | undefined,
@@ -157,6 +162,7 @@ export function activate(context: vscode.ExtensionContext) {
       codebaseFound = cpath.endsWith(".ts")
         ? findCodebase(wmPath, configResult.codebases)
         : undefined;
+      lastGitBranchConfig = configResult.gitBranches;
     }
 
     const lang = determineLanguage(cpath, lastDefaultTs);
@@ -253,6 +259,100 @@ export function activate(context: vscode.ExtensionContext) {
     setWorkspaceStatus(myStatusBarItem);
   }
 
+  async function checkAndSwitchWorkspaceForGitBranch() {
+    try {
+      // Get current git branch
+      const currentBranch = await getCurrentGitBranch();
+      if (!currentBranch) {
+        channel.appendLine("No git branch detected or not in a git repository");
+        return;
+      }
+
+      channel.appendLine(`Current git branch: ${currentBranch}`);
+
+      let gitBranches = lastGitBranchConfig;
+
+      // If we don't have the config cached yet, load it
+      if (!gitBranches) {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+          channel.appendLine("No workspace folder found");
+          return;
+        }
+
+        const rootPath = workspaceFolders[0].uri.toString();
+        // Call loadConfigForPath with empty string to check root wmill.yaml
+        const config = await loadConfigForPath("", rootPath, channel);
+        gitBranches = config.gitBranches;
+        lastGitBranchConfig = gitBranches; // Cache it
+      }
+
+      if (!gitBranches) {
+        channel.appendLine("No gitBranches configuration found in wmill.yaml");
+        return;
+      }
+
+      // Switch workspace based on branch
+      await switchWorkspaceForBranch(currentBranch, gitBranches, channel);
+    } catch (error) {
+      channel.appendLine(`Error checking git branch for workspace switch: ${error}`);
+      console.error("Error checking git branch:", error);
+    }
+  }
+
+  async function setupGitBranchWatcher() {
+    try {
+      // Clean up existing watcher if any
+      if (gitHeadWatcher) {
+        gitHeadWatcher.dispose();
+        gitHeadWatcher = undefined;
+      }
+
+      const gitHeadPath = await getGitHeadPath();
+      if (!gitHeadPath) {
+        channel.appendLine("No .git/HEAD file found, skipping git branch watcher setup");
+        return;
+      }
+
+      channel.appendLine(`Setting up git branch watcher on: ${gitHeadPath.fsPath}`);
+
+      // Create file system watcher for .git/HEAD
+      // We need to use a glob pattern relative to workspace
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      if (!workspaceFolders || workspaceFolders.length === 0) {
+        channel.appendLine("No workspace folder found for watcher");
+        return;
+      }
+      
+      gitHeadWatcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(workspaceFolders[0], ".git/HEAD")
+      );
+
+      // Watch for changes to .git/HEAD (which happens on branch switch)
+      gitHeadWatcher.onDidChange(async () => {
+        channel.appendLine("Git HEAD changed, checking for workspace switch");
+        await checkAndSwitchWorkspaceForGitBranch();
+      });
+
+      // Also watch for onCreate since git sometimes replaces the file
+      gitHeadWatcher.onDidCreate(async () => {
+        channel.appendLine("Git HEAD created, checking for workspace switch");
+        await checkAndSwitchWorkspaceForGitBranch();
+      });
+
+      context.subscriptions.push(gitHeadWatcher);
+
+      // Also check on initial setup
+      await checkAndSwitchWorkspaceForGitBranch();
+    } catch (error) {
+      channel.appendLine(`Error setting up git branch watcher: ${error}`);
+      console.error("Error setting up git branch watcher:", error);
+    }
+  }
+
+  // Setup git branch watcher on activation
+  setupGitBranchWatcher();
+
   async function start() {
     const tokenConf = vscode.workspace
       .getConfiguration("windmill")
@@ -260,52 +360,66 @@ export function activate(context: vscode.ExtensionContext) {
 
     let gotFromConfig = false;
     try {
-      const folderOverride = vscode.workspace
-        .getConfiguration("windmill")
-        .get("configFolder") as string;
-      const { workspaces, active } = await getWorkspacesFromConfig(
-        folderOverride
-      );
-      if (workspaces.length > 0) {
-        const activeWorkspace = workspaces.find((w: any) => w.name === active);
-        if (!activeWorkspace) {
-          return;
+      // First check if we should use git branch-based workspace switching
+      let shouldUseGitBranch = false;
+      
+      if (lastGitBranchConfig) {
+        const currentBranch = await getCurrentGitBranch();
+        if (currentBranch && lastGitBranchConfig[currentBranch]) {
+          shouldUseGitBranch = true;
+          channel.appendLine("Git branch config exists and is active, skipping CLI config workspace switching");
         }
-        const { remote, workspaceId, token } = activeWorkspace;
-        await vscode.workspace
+      }
+
+      // Only use CLI config if git branch config is not applicable
+      if (!shouldUseGitBranch) {
+        const folderOverride = vscode.workspace
           .getConfiguration("windmill")
-          .update("remote", remote, vscode.ConfigurationTarget.Global);
-        await vscode.workspace
-          .getConfiguration("windmill")
-          .update(
-            "workspaceId",
-            workspaceId,
+          .get("configFolder") as string;
+        const { workspaces, active } = await getWorkspacesFromConfig(
+          folderOverride
+        );
+        if (workspaces.length > 0) {
+          const activeWorkspace = workspaces.find((w: any) => w.name === active);
+          if (!activeWorkspace) {
+            return;
+          }
+          const { remote, workspaceId, token } = activeWorkspace;
+          await vscode.workspace
+            .getConfiguration("windmill")
+            .update("remote", remote, vscode.ConfigurationTarget.Global);
+          await vscode.workspace
+            .getConfiguration("windmill")
+            .update(
+              "workspaceId",
+              workspaceId,
+              vscode.ConfigurationTarget.Global
+            );
+          await vscode.workspace
+            .getConfiguration("windmill")
+            .update("token", token, vscode.ConfigurationTarget.Global);
+          await vscode.workspace
+            .getConfiguration("windmill")
+            .update(
+              "currentWorkspace",
+              active,
+              vscode.ConfigurationTarget.Global
+            );
+          await vscode.workspace.getConfiguration("windmill").update(
+            "additionalWorkspaces",
+            workspaces.map((w) => ({
+              name: w.name,
+              remote: w.remote,
+              workspaceId: w.workspaceId,
+              token: w.token,
+            })),
             vscode.ConfigurationTarget.Global
           );
-        await vscode.workspace
-          .getConfiguration("windmill")
-          .update("token", token, vscode.ConfigurationTarget.Global);
-        await vscode.workspace
-          .getConfiguration("windmill")
-          .update(
-            "currentWorkspace",
-            active,
-            vscode.ConfigurationTarget.Global
+          vscode.window.showInformationMessage(
+            "Workspace configuration updated from config"
           );
-        await vscode.workspace.getConfiguration("windmill").update(
-          "additionalWorkspaces",
-          workspaces.map((w) => ({
-            name: w.name,
-            remote: w.remote,
-            workspaceId: w.workspaceId,
-            token: w.token,
-          })),
-          vscode.ConfigurationTarget.Global
-        );
-        vscode.window.showInformationMessage(
-          "Workspace configuration updated from config"
-        );
-        gotFromConfig = true;
+          gotFromConfig = true;
+        }
       }
     } catch (e) {
       console.error("error getting workspaces from config", e);
