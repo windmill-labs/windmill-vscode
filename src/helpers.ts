@@ -46,7 +46,9 @@ export function determineLanguage(
     case "sql":
       return getSqlType(len, penu);
     case "yaml":
-      return penu === "flow/flow" ? "flow" : undefined;
+      return penu === "flow/flow" || penu.endsWith("__flow/flow")
+        ? "flow"
+        : undefined;
     case "rs":
       return "rust";
     case "cs":
