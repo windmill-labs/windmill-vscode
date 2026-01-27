@@ -29,6 +29,23 @@ import {
 import { getGitHeadPath } from "./utils/git-utils";
 import { GitBranchConfig } from "./config/config-manager";
 
+/**
+ * Custom YAML tag for !inline that preserves the tag as part of the string value.
+ * When parsing `content: !inline filename.ts`, this returns "!inline filename.ts"
+ * instead of just "filename.ts".
+ */
+const inlineTag = {
+  identify: (value: unknown) => typeof value === "string" && value.startsWith("!inline "),
+  tag: "!inline",
+  resolve(str: string) {
+    return "!inline " + str;
+  },
+};
+
+function parseYamlWithInline<T = unknown>(text: string): T {
+  return yaml.parse(text, { customTags: [inlineTag] }) as T;
+}
+
 export type Codebase = {
   assets?: {
     from: string;
@@ -172,7 +189,7 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         if (lang === "flow") {
           let uriPath = targetEditor?.document.uri.toString();
-          let flow = yaml.parse(targetEditor?.document.getText()) as OpenFlow;
+          let flow = parseYamlWithInline<OpenFlow>(targetEditor?.document.getText());
 
           await replaceInlineScripts(
             flow?.value?.modules,
@@ -483,7 +500,7 @@ export function activate(context: vscode.ExtensionContext) {
             try {
               if (lastFlowDocument) {
                 currentLoadedFlow = (
-                  yaml.parse(lastFlowDocument?.getText() || "") as any
+                  parseYamlWithInline(lastFlowDocument?.getText() || "") as any
                 )?.["value"]?.["modules"] as FlowModule[];
                 if (!Array.isArray(currentLoadedFlow)) {
                   currentLoadedFlow = undefined;
