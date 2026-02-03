@@ -190,9 +190,9 @@
     "esbuild-wasm": "^0.23.0",
     "minimatch": "^9.0.4",
     "tar-stream": "^3.1.7",
-    "windmill-client": "^1.514.1",
-    "windmill-utils-internal": "^1.0.1",
-    "windmill-yaml-validator": "^1.0.1",
+    "windmill-client": "^1.624.0",
+    "windmill-utils-internal": "^1.3.3",
+    "windmill-yaml-validator": "^1.0.2",
     "yaml": "^2.8.0"
   }
 }
