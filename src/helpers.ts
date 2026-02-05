@@ -90,6 +90,9 @@ export function getSqlType(len: number, penu: string) {
     if (penu === "sf") {
       return "snowflake";
     }
+    if (penu === "duckdb") {
+      return "duckdb";
+    }
   }
   return "postgresql";
 }
