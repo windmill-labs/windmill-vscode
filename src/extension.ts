@@ -20,7 +20,7 @@ import {
 } from "./workspace/workspace-manager";
 import { getWebviewContent } from "./webview/webview-manager";
 import { registerCommands } from "./commands/command-handlers";
-import { FlowDiagnosticProvider } from "./validation/diagnostic-provider";
+import { WindmillDiagnosticProvider } from "./validation/diagnostic-provider";
 import {
   replaceInlineScripts,
   extractInlineScripts,
@@ -57,17 +57,17 @@ export type Codebase = {
   format?: "cjs" | "esm";
 };
 
-let flowDiagnosticProvider: FlowDiagnosticProvider | undefined = undefined;
+let diagnosticProvider: WindmillDiagnosticProvider | undefined = undefined;
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("Windmill extension is now active");
 
-  // Initialize flow validation diagnostics
+  // Initialize YAML validation diagnostics (flows, schedules, triggers)
   try {
-    flowDiagnosticProvider = new FlowDiagnosticProvider();
-    flowDiagnosticProvider.activate(context);
+    diagnosticProvider = new WindmillDiagnosticProvider();
+    diagnosticProvider.activate(context);
   } catch (error) {
-    console.error("Failed to initialize flow validation:", error);
+    console.error("Failed to initialize YAML validation:", error);
   }
 
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
@@ -612,5 +612,5 @@ export function activate(context: vscode.ExtensionContext) {
 // This method is called when your extension is deactivated
 export function deactivate() {
   console.log("deactivated extension windmill");
-  flowDiagnosticProvider?.dispose();
+  diagnosticProvider?.dispose();
 }

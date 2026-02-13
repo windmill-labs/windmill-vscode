@@ -1,58 +1,70 @@
 import * as vscode from 'vscode';
-import { FlowValidator } from "windmill-yaml-validator"
+import { WindmillYamlValidator, getValidationTargetFromFilename } from "windmill-yaml-validator"
 import { getLocationForJsonPath, YamlParserResult } from '@stoplight/yaml';
 
-export class FlowDiagnosticProvider {
+export class WindmillDiagnosticProvider {
   private diagnosticCollection: vscode.DiagnosticCollection;
-  private validator: FlowValidator;
+  private validator: WindmillYamlValidator;
+
+  private get enabled(): boolean {
+    return vscode.workspace.getConfiguration('windmill.diagnostics').get('enabled', true);
+  }
 
   constructor() {
-    this.diagnosticCollection = vscode.languages.createDiagnosticCollection('openflow');
-    this.validator = new FlowValidator();
+    this.diagnosticCollection = vscode.languages.createDiagnosticCollection('windmill');
+    this.validator = new WindmillYamlValidator();
   }
 
   public activate(context: vscode.ExtensionContext) {
-    // Register diagnostic provider
     context.subscriptions.push(this.diagnosticCollection);
 
-    // Validate on document open
     const activeEditor = vscode.window.activeTextEditor;
-    if (activeEditor && this.isFlowYamlFile(activeEditor.document)) {
+    if (activeEditor && this.isValidatable(activeEditor.document)) {
       this.validateDocument(activeEditor.document);
     }
 
-    // Validate on document change
     context.subscriptions.push(
       vscode.workspace.onDidChangeTextDocument(event => {
-        if (this.isFlowYamlFile(event.document)) {
+        if (this.isValidatable(event.document)) {
           this.validateDocument(event.document);
         }
       })
     );
 
-    // Validate on document open
     context.subscriptions.push(
       vscode.workspace.onDidOpenTextDocument(document => {
-        if (this.isFlowYamlFile(document)) {
+        if (this.isValidatable(document)) {
           this.validateDocument(document);
         }
       })
     );
 
-    // Clear diagnostics on document close
     context.subscriptions.push(
       vscode.workspace.onDidCloseTextDocument(document => {
-        if (this.isFlowYamlFile(document)) {
-          this.diagnosticCollection.delete(document.uri);
+        this.diagnosticCollection.delete(document.uri);
+      })
+    );
+
+    context.subscriptions.push(
+      vscode.window.onDidChangeActiveTextEditor(editor => {
+        if (editor && this.isValidatable(editor.document)) {
+          this.validateDocument(editor.document);
         }
       })
     );
 
-    // Validate on active editor change
+    // Re-validate or clear when the setting changes
     context.subscriptions.push(
-      vscode.window.onDidChangeActiveTextEditor(editor => {
-        if (editor && this.isFlowYamlFile(editor.document)) {
-          this.validateDocument(editor.document);
+      vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('windmill.diagnostics.enabled')) {
+          if (this.enabled) {
+            const editor = vscode.window.activeTextEditor;
+            if (editor && this.isValidatable(editor.document)) {
+              this.validateDocument(editor.document);
+            }
+          } else {
+            this.diagnosticCollection.clear();
+          }
         }
       })
     );
@@ -62,36 +74,52 @@ export class FlowDiagnosticProvider {
     this.diagnosticCollection.dispose();
   }
 
-  private isFlowYamlFile(document: vscode.TextDocument): boolean {
-    return document.uri.path.endsWith('.flow.yaml') || document.uri.path.endsWith('flow.yaml');
+  private isValidatable(document: vscode.TextDocument): boolean {
+    return getValidationTargetFromFilename(document.uri.path) !== null;
   }
 
-  private validateDocument(document: vscode.TextDocument) {    
+  private validateDocument(document: vscode.TextDocument) {
+    if (!this.enabled) {
+      this.diagnosticCollection.delete(document.uri);
+      return;
+    }
+
+    const target = getValidationTargetFromFilename(document.uri.path);
+    if (!target) {
+      return;
+    }
+
     try {
-      const { parsed, errors } = this.validator.validateFlow(document.getText());
-      const diagnostics = errors.map(error => this.toDiagnostic(error, parsed));
+      const { parsed, errors } = this.validator.validate(document.getText(), target);
+      const diagnostics: vscode.Diagnostic[] = [];
+      for (const error of errors) {
+        try {
+          diagnostics.push(this.toDiagnostic(error, parsed));
+        } catch {
+          // Skip errors where we can't determine a source location
+        }
+      }
       this.diagnosticCollection.set(document.uri, diagnostics);
     } catch (error) {
-      console.error('Error validating flow document:', error);
+      console.error('Error validating document:', error);
       this.diagnosticCollection.delete(document.uri);
     }
   }
 
-  // Simple implementation of json-pointer -> path conversion, mirroring @stoplight/json.pointerToPath
-private pointerToPath(pointer: string): string[] {
-  if (!pointer) return [];
-  return pointer
-    .split('/')
-    .slice(1) // remove empty first element resulting from leading '/'
-    .map(segment => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
-}
+  private pointerToPath(pointer: string): string[] {
+    if (!pointer) return [];
+    return pointer
+      .split('/')
+      .slice(1)
+      .map(segment => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
+  }
 
   private toDiagnostic(
     err: any,
     ast: YamlParserResult<unknown>,
   ): vscode.Diagnostic {
     const path = this.pointerToPath(err.instancePath);
-    const loc = getLocationForJsonPath(ast, path, true); // 'closest' never returns null
+    const loc = getLocationForJsonPath(ast, path, true);
     if (!loc) throw new Error('No location found');
     const start = new vscode.Position(loc.range.start.line, loc.range.start.character);
     const end   = new vscode.Position(loc.range.end.line,   loc.range.end.character);
@@ -99,7 +127,7 @@ private pointerToPath(pointer: string): string[] {
 
     const msg =
       err.keyword === 'enum'
-        ? `Value must be one of: ${(err.params as any).allowedValues.join(', ')}`
+        ? `Value must be one of: ${(err.params as any).allowedValues.filter((v: unknown) => v !== null).join(', ')}`
         : err.message ?? 'schema error';
 
     return new vscode.Diagnostic(range, msg, vscode.DiagnosticSeverity.Error);
