@@ -103,21 +103,7 @@ export function getWorkspacesFromVSCodeConfig(): Workspace[] {
   const conf = vscode.workspace.getConfiguration("windmill");
   const workspaces: Workspace[] = [];
 
-  // Add main workspace
-  const mainRemote = conf.get("remote") as string;
-  const mainWorkspaceId = conf.get("workspaceId") as string;
-  const mainToken = conf.get("token") as string;
-  
-  if (mainRemote && mainWorkspaceId && mainToken) {
-    workspaces.push({
-      name: "main",
-      remote: mainRemote,
-      workspaceId: mainWorkspaceId,
-      token: mainToken,
-    });
-  }
-
-  // Add additional workspaces
+  // Add additional workspaces first (these have correct CLI profile names)
   const additionalWorkspaces = (conf.get("additionalWorkspaces") as any[]) || [];
   workspaces.push(...additionalWorkspaces.map((w: any) => ({
     name: w.name,
@@ -125,6 +111,32 @@ export function getWorkspacesFromVSCodeConfig(): Workspace[] {
     workspaceId: w.workspaceId,
     token: w.token,
   })));
+
+  // Add main workspace only if no additional workspace has the same remote+workspaceId.
+  // When CLI config is synced, the top-level settings are a copy of the active CLI workspace
+  // which is already in additionalWorkspaces with its correct profile name. Adding a
+  // synthetic "main" entry would cause switchWorkspaceForBranch to pick "main" instead of
+  // the actual CLI profile name.
+  const mainRemote = conf.get("remote") as string;
+  const mainWorkspaceId = conf.get("workspaceId") as string;
+  const mainToken = conf.get("token") as string;
+
+  if (mainRemote && mainWorkspaceId && mainToken) {
+    const normalizedMainRemote = mainRemote.endsWith('/') ? mainRemote : mainRemote + '/';
+    const isDuplicate = workspaces.some(w => {
+      const normalizedRemote = w.remote.endsWith('/') ? w.remote : w.remote + '/';
+      return normalizedRemote === normalizedMainRemote && w.workspaceId === mainWorkspaceId;
+    });
+
+    if (!isDuplicate) {
+      workspaces.push({
+        name: "main",
+        remote: mainRemote,
+        workspaceId: mainWorkspaceId,
+        token: mainToken,
+      });
+    }
+  }
 
   return workspaces;
 }
