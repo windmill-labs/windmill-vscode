@@ -9,6 +9,8 @@ import {
   readTextFromUri,
   getRootPath,
   isArrayEqual,
+  readModulesFromDisk,
+  isScriptModulePath,
 } from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
 import {
@@ -217,11 +219,10 @@ export function activate(context: vscode.ExtensionContext) {
         } else {
           let lock: string | undefined = undefined;
           let tag: string | undefined = undefined;
-          const uri = vscode.Uri.parse(
-            targetEditor.document.uri.toString().split(".")[0] + ".script.yaml"
-          );
-          if (await fileExists(uri)) {
-            const rd = await readTextFromUri(uri);
+          const scriptBaseUri = targetEditor.document.uri.toString().split(cpath)[0] + wmPath;
+          const metadataUri = vscode.Uri.parse(scriptBaseUri + ".script.yaml");
+          if (await fileExists(metadataUri)) {
+            const rd = await readTextFromUri(metadataUri);
             const config = (yaml.parse(rd) as any) ?? {};
             let nlock = config?.["lock"];
             if (
@@ -229,19 +230,25 @@ export function activate(context: vscode.ExtensionContext) {
               typeof nlock === "string" &&
               nlock.trimStart().startsWith("!inline ")
             ) {
-              const path = nlock.split(" ")[1];
-              const rootPath = getRootPath(targetEditor);
-              const uriPath = rootPath + "/" + path;
+              const lockRelPath = nlock.split(" ")[1];
+              const editorRootPath = getRootPath(targetEditor);
+              const uriPath = editorRootPath + "/" + lockRelPath;
               try {
                 channel.appendLine("reading lock file: " + uriPath);
                 nlock = await readTextFromUri(vscode.Uri.parse(uriPath));
               } catch (e) {
-                channel.appendLine(`Lock file ${path} not found: ${e}`);
+                channel.appendLine(`Lock file ${lockRelPath} not found: ${e}`);
               }
             }
             lock = nlock;
             tag = config?.["tag"];
           }
+
+          // Read modules from __module folder only when on the main script file
+          const modules = isScriptModulePath(cpath)
+            ? undefined
+            : await readModulesFromDisk(scriptBaseUri + "__module", lastDefaultTs);
+
           const message = {
             type: "replaceScript",
             content: targetEditor?.document.getText(),
@@ -251,6 +258,7 @@ export function activate(context: vscode.ExtensionContext) {
             tag,
             codebaseFound: codebaseFound,
             isCodebase: codebaseFound !== undefined,
+            modules: modules ?? undefined,
           };
 
           channel.appendLine(
@@ -260,6 +268,7 @@ export function activate(context: vscode.ExtensionContext) {
                 isFileCodebase: codebaseFound,
                 wmPath,
                 rsn,
+                hasModules: modules !== undefined,
               })
           );
 
