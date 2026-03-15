@@ -115,6 +115,7 @@ export function activate(context: vscode.ExtensionContext) {
   let lastActiveEditor: vscode.TextEditor | undefined = undefined;
   let lastFlowDocument: vscode.TextDocument | undefined = undefined;
   let lastDefaultTs: "deno" | "bun" = "bun";
+  let lastNonDottedPaths = false;
   let codebaseFound: Codebase | undefined = undefined;
   let pinnedFileUri: vscode.Uri | undefined = undefined;
   let lastGitBranchConfig: GitBranchConfig | undefined = undefined;
@@ -179,6 +180,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (rsn === "changeActiveTextEditor" || rsn === "start") {
       const configResult = await loadConfigForPath(wmPath, rootPath, channel);
       lastDefaultTs = configResult.defaultTs;
+      lastNonDottedPaths = configResult.nonDottedPaths;
       codebaseFound = cpath.endsWith(".ts")
         ? findCodebase(wmPath, configResult.codebases)
         : undefined;
@@ -530,7 +532,9 @@ export function activate(context: vscode.ExtensionContext) {
               message?.flow?.value?.modules ?? [],
               inlineScriptMapping,
               "/",
-              lastDefaultTs ?? "bun"
+              lastDefaultTs ?? "bun",
+              undefined,
+              { skipInlineScriptSuffix: lastNonDottedPaths }
             );
             await Promise.all(
               allExtracted.map(async (s) => {

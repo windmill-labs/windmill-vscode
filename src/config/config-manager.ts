@@ -67,6 +67,7 @@ export async function loadConfigForPath(
   defaultTs: "deno" | "bun";
   codebases: any[];
   gitBranches?: GitBranchConfig;
+  nonDottedPaths: boolean;
 }> {
   let splittedSlash = wmPath.split("/");
   channel.appendLine("wmPath: " + wmPath + "|" + splittedSlash);
@@ -74,6 +75,7 @@ export async function loadConfigForPath(
   let defaultTs: "deno" | "bun" = "bun";
   let codebases: any[] = [];
   let gitBranches: GitBranchConfig | undefined = undefined;
+  let nonDottedPaths = false;
 
   for (let i = 0; i < splittedSlash.length; i++) {
     const path = splittedSlash.slice(0, i).join("/") + "/wmill.yaml";
@@ -87,6 +89,7 @@ export async function loadConfigForPath(
       defaultTs = config?.["defaultTs"] ?? "bun";
       codebases = config?.["codebases"] ?? [];
       gitBranches = config?.["gitBranches"];
+      nonDottedPaths = config?.["nonDottedPaths"] === true;
       channel.appendLine(
         path +
           " exists! defaultTs: " +
@@ -94,16 +97,18 @@ export async function loadConfigForPath(
           ", codebases:" +
           JSON.stringify(codebases) +
           ", gitBranches:" +
-          JSON.stringify(gitBranches)
+          JSON.stringify(gitBranches) +
+          ", nonDottedPaths:" +
+          nonDottedPaths
       );
       found = true;
       break;
     }
   }
-  
+
   if (!found) {
     codebases = [];
   }
 
-  return { defaultTs, codebases, gitBranches };
+  return { defaultTs, codebases, gitBranches, nonDottedPaths };
 }
