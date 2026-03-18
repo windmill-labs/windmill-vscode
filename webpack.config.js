@@ -57,6 +57,9 @@ const webExtensionConfig = {
     ],
   },
   plugins: [
+    new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+      resource.request = resource.request.replace(/^node:/, "");
+    }),
     new webpack.optimize.LimitChunkCountPlugin({
       maxChunks: 1, // disable chunks by default since web extensions must be a single bundle
     }),

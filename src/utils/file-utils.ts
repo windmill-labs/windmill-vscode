@@ -44,8 +44,41 @@ export function getParentScriptBasePath(modulePath: string): string | undefined 
   return modulePath.substring(0, idx);
 }
 
-const scriptExts = [".py", ".ts", ".go", ".sh", ".sql", ".gql", ".ps1", ".php", ".rs", ".cs", ".nu", ".java",
+export function joinUriPath(rootUri: string, relativePath: string): string {
+  const base = rootUri.endsWith("/") ? rootUri.slice(0, -1) : rootUri;
+  const rel = relativePath.startsWith("/") ? relativePath.slice(1) : relativePath;
+  return base + "/" + rel;
+}
+
+export const scriptExts = [".py", ".ts", ".go", ".sh", ".sql", ".gql", ".ps1", ".php", ".rs", ".cs", ".nu", ".java",
   ".fetch.ts", ".bun.ts", ".deno.ts", ".pg.sql", ".my.sql", ".bq.sql", ".sf.sql", ".ms.sql"];
+
+/**
+ * Resolves an !inline lock reference to its actual file content.
+ * If the value is not an !inline reference, returns it as-is.
+ */
+export async function resolveInlineLock(
+  lock: string | undefined,
+  rootUri: string,
+  channel: vscode.OutputChannel
+): Promise<string | undefined> {
+  if (
+    !lock ||
+    typeof lock !== "string" ||
+    !lock.trimStart().startsWith("!inline ")
+  ) {
+    return lock;
+  }
+  const lockRelPath = lock.trimStart().split(" ")[1];
+  const lockUri = vscode.Uri.parse(joinUriPath(rootUri, lockRelPath));
+  try {
+    channel.appendLine("reading lock file: " + lockRelPath);
+    return await readTextFromUri(lockUri);
+  } catch (e) {
+    channel.appendLine(`Lock file ${lockRelPath} not found: ${e}`);
+    return undefined;
+  }
+}
 
 export async function findScriptContentFile(
   basePathUri: string

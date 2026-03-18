@@ -11,6 +11,7 @@ import {
   isArrayEqual,
   readModulesFromDisk,
   isScriptModulePath,
+  resolveInlineLock,
 } from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
 import {
@@ -25,11 +26,18 @@ import { registerCommands } from "./commands/command-handlers";
 import { WindmillDiagnosticProvider } from "./validation/diagnostic-provider";
 import {
   replaceInlineScripts,
+  replaceAllPathScriptsWithLocal,
   extractInlineScripts,
   extractCurrentMapping,
 } from "windmill-utils-internal";
 import { getGitHeadPath } from "./utils/git-utils";
 import { GitBranchConfig } from "./config/config-manager";
+import { createLocalScriptReader } from "./utils/local-path-scripts";
+import {
+  snapshotPathScripts,
+  tagReplacedPathScripts,
+  restorePathScripts,
+} from "./utils/pathscript-restore";
 
 /**
  * Custom YAML tag for !inline that preserves the tag as part of the string value.
@@ -195,6 +203,11 @@ export function activate(context: vscode.ExtensionContext) {
           let uriPath = targetEditor?.document.uri.toString();
           let flow = parseYamlWithInline<OpenFlow>(targetEditor?.document.getText());
 
+          const flowLogger = {
+              info: (...args: any[]) => channel.appendLine(args.join(" ")),
+              error: (...args: any[]) => channel.appendLine(args.join(" ")),
+            };
+
           await replaceInlineScripts(
             flow?.value?.modules,
             async (path) => {
@@ -202,12 +215,26 @@ export function activate(context: vscode.ExtensionContext) {
                 uriPath.split("/").slice(0, -1).join("/") + "/" + path;
               return await readTextFromUri(vscode.Uri.parse(fpath));
             },
-            {
-              info: (...args: any[]) => channel.appendLine(args.join(" ")),
-              error: (...args: any[]) => channel.appendLine(args.join(" ")),
-            },
+            flowLogger,
             uriPath
           );
+
+          // Replace PathScript modules with local file content so previews use local versions
+          if (flow?.value) {
+            // Snapshot original PathScript values before replacement mutates them
+            snapshotPathScripts(flow.value);
+
+            const rootUriStr = targetEditor.document.uri.toString().split(cpath)[0];
+            const localScriptReader = createLocalScriptReader(
+              rootUriStr,
+              lastDefaultTs,
+              channel
+            );
+            await replaceAllPathScriptsWithLocal(flow.value, localScriptReader, flowLogger);
+
+            // Move snapshots into module.value so they survive the iframe round-trip
+            tagReplacedPathScripts(flow.value);
+          }
 
           const message = {
             type: "replaceFlow",
@@ -222,27 +249,12 @@ export function activate(context: vscode.ExtensionContext) {
           let lock: string | undefined = undefined;
           let tag: string | undefined = undefined;
           const scriptBaseUri = targetEditor.document.uri.toString().split(cpath)[0] + wmPath;
+          const scriptRootUri = targetEditor.document.uri.toString().split(cpath)[0];
           const metadataUri = vscode.Uri.parse(scriptBaseUri + ".script.yaml");
           if (await fileExists(metadataUri)) {
             const rd = await readTextFromUri(metadataUri);
             const config = (yaml.parse(rd) as any) ?? {};
-            let nlock = config?.["lock"];
-            if (
-              nlock &&
-              typeof nlock === "string" &&
-              nlock.trimStart().startsWith("!inline ")
-            ) {
-              const lockRelPath = nlock.split(" ")[1];
-              const editorRootPath = getRootPath(targetEditor);
-              const uriPath = editorRootPath + "/" + lockRelPath;
-              try {
-                channel.appendLine("reading lock file: " + uriPath);
-                nlock = await readTextFromUri(vscode.Uri.parse(uriPath));
-              } catch (e) {
-                channel.appendLine(`Lock file ${lockRelPath} not found: ${e}`);
-              }
-            }
-            lock = nlock;
+            lock = await resolveInlineLock(config?.["lock"], scriptRootUri, channel);
             tag = config?.["tag"];
           }
 
@@ -524,6 +536,13 @@ export function activate(context: vscode.ExtensionContext) {
             if (!message.uriPath?.endsWith("flow.yaml")) {
               return;
             }
+
+            // Restore PathScript modules that were replaced for preview
+            // Must happen before extractInlineScripts to avoid creating spurious files
+            if (message?.flow?.value) {
+              restorePathScripts(message.flow.value);
+            }
+
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");
             let inlineScriptMapping = {};
             extractCurrentMapping(currentLoadedFlow, inlineScriptMapping);
