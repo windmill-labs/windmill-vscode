@@ -44,7 +44,7 @@ export function getParentScriptBasePath(modulePath: string): string | undefined 
   return modulePath.substring(0, idx);
 }
 
-const scriptExts = [".py", ".ts", ".go", ".sh", ".sql", ".gql", ".ps1", ".php", ".rs", ".cs", ".nu", ".java",
+export const scriptExts = [".py", ".ts", ".go", ".sh", ".sql", ".gql", ".ps1", ".php", ".rs", ".cs", ".nu", ".java",
   ".fetch.ts", ".bun.ts", ".deno.ts", ".pg.sql", ".my.sql", ".bq.sql", ".sf.sql", ".ms.sql"];
 
 export async function findScriptContentFile(

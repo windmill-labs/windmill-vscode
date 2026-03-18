@@ -25,11 +25,13 @@ import { registerCommands } from "./commands/command-handlers";
 import { WindmillDiagnosticProvider } from "./validation/diagnostic-provider";
 import {
   replaceInlineScripts,
+  replaceAllPathScriptsWithLocal,
   extractInlineScripts,
   extractCurrentMapping,
 } from "windmill-utils-internal";
 import { getGitHeadPath } from "./utils/git-utils";
 import { GitBranchConfig } from "./config/config-manager";
+import { createLocalScriptReader } from "./utils/local-path-scripts";
 
 /**
  * Custom YAML tag for !inline that preserves the tag as part of the string value.
@@ -195,6 +197,11 @@ export function activate(context: vscode.ExtensionContext) {
           let uriPath = targetEditor?.document.uri.toString();
           let flow = parseYamlWithInline<OpenFlow>(targetEditor?.document.getText());
 
+          const flowLogger = {
+              info: (...args: any[]) => channel.appendLine(args.join(" ")),
+              error: (...args: any[]) => channel.appendLine(args.join(" ")),
+            };
+
           await replaceInlineScripts(
             flow?.value?.modules,
             async (path) => {
@@ -202,12 +209,19 @@ export function activate(context: vscode.ExtensionContext) {
                 uriPath.split("/").slice(0, -1).join("/") + "/" + path;
               return await readTextFromUri(vscode.Uri.parse(fpath));
             },
-            {
-              info: (...args: any[]) => channel.appendLine(args.join(" ")),
-              error: (...args: any[]) => channel.appendLine(args.join(" ")),
-            },
+            flowLogger,
             uriPath
           );
+
+          // Replace PathScript modules with local file content so previews use local versions
+          if (flow?.value && rootPath) {
+            const localScriptReader = createLocalScriptReader(
+              rootPath,
+              lastDefaultTs,
+              channel
+            );
+            await replaceAllPathScriptsWithLocal(flow.value, localScriptReader, flowLogger);
+          }
 
           const message = {
             type: "replaceFlow",
