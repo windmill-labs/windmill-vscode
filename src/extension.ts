@@ -34,9 +34,8 @@ import { getGitHeadPath } from "./utils/git-utils";
 import { GitBranchConfig } from "./config/config-manager";
 import { createLocalScriptReader } from "./utils/local-path-scripts";
 import {
-  PathScriptMap,
-  buildPathScriptMap,
-  recordInjectedContent,
+  snapshotPathScripts,
+  tagReplacedPathScripts,
   restorePathScripts,
 } from "./utils/pathscript-restore";
 
@@ -128,7 +127,6 @@ export function activate(context: vscode.ExtensionContext) {
   let codebaseFound: Codebase | undefined = undefined;
   let pinnedFileUri: vscode.Uri | undefined = undefined;
   let lastGitBranchConfig: GitBranchConfig | undefined = undefined;
-  let lastPathScriptMap: PathScriptMap | undefined = undefined;
   let gitHeadWatcher: vscode.FileSystemWatcher | undefined = undefined;
 
   async function refreshPanel(
@@ -223,8 +221,8 @@ export function activate(context: vscode.ExtensionContext) {
 
           // Replace PathScript modules with local file content so previews use local versions
           if (flow?.value) {
-            // Build map of PathScript modules before replacement so we can restore on sync-back
-            lastPathScriptMap = buildPathScriptMap(flow.value);
+            // Snapshot original PathScript values before replacement mutates them
+            snapshotPathScripts(flow.value);
 
             const rootUriStr = targetEditor.document.uri.toString().split(cpath)[0];
             const localScriptReader = createLocalScriptReader(
@@ -234,8 +232,8 @@ export function activate(context: vscode.ExtensionContext) {
             );
             await replaceAllPathScriptsWithLocal(flow.value, localScriptReader, flowLogger);
 
-            // Record what content was injected so we can detect user edits on sync-back
-            recordInjectedContent(flow.value, lastPathScriptMap);
+            // Move snapshots into module.value so they survive the iframe round-trip
+            tagReplacedPathScripts(flow.value);
           }
 
           const message = {
@@ -541,8 +539,8 @@ export function activate(context: vscode.ExtensionContext) {
 
             // Restore PathScript modules that were replaced for preview
             // Must happen before extractInlineScripts to avoid creating spurious files
-            if (lastPathScriptMap && message?.flow?.value) {
-              restorePathScripts(message.flow.value, lastPathScriptMap);
+            if (message?.flow?.value) {
+              restorePathScripts(message.flow.value);
             }
 
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");

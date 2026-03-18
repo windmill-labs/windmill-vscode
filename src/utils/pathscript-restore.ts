@@ -1,130 +1,113 @@
 /**
- * Tracks PathScript modules that were replaced with rawscripts for preview,
- * so they can be restored before sync-back to disk.
+ * Tags PathScript modules that were replaced with rawscripts for preview,
+ * and restores them before sync-back to disk.
+ *
+ * Uses a hidden `_originalPathScript` field on the module value itself,
+ * which the Windmill iframe preserves through the round-trip.
  */
 
-interface ReplacedPathScript {
-  originalValue: any;
-  injectedContent: string;
-}
-
-// For AI agent tools, keyed by `${moduleId}:${toolId}`
-interface ReplacedToolScript {
-  originalToolValue: any;
-  injectedContent: string;
-}
-
-export type PathScriptMap = Map<string, ReplacedPathScript | ReplacedToolScript>;
+const TAG_KEY = "_originalPathScript";
 
 /**
- * Builds a map of module ID → original value for all PathScript modules,
- * BEFORE replaceAllPathScriptsWithLocal mutates them.
- * Must be called after parseYaml but before replacement.
+ * After replaceAllPathScriptsWithLocal has mutated the flow, call this
+ * to tag each replaced module with its original PathScript value.
+ * Must be called AFTER replacement (modules are now rawscript).
  */
-export function buildPathScriptMap(flowValue: any): PathScriptMap {
-  const map: PathScriptMap = new Map();
+export function tagReplacedPathScripts(flowValue: any) {
   if (flowValue?.modules) {
-    collectFromModules(flowValue.modules, map);
+    tagInModules(flowValue.modules);
   }
   if (flowValue?.failure_module) {
-    collectFromModules([flowValue.failure_module], map);
+    tagInModules([flowValue.failure_module]);
   }
   if (flowValue?.preprocessor_module) {
-    collectFromModules([flowValue.preprocessor_module], map);
+    tagInModules([flowValue.preprocessor_module]);
   }
-  return map;
 }
 
-function collectFromModules(modules: any[], map: PathScriptMap) {
+/**
+ * Must be called BEFORE replaceAllPathScriptsWithLocal to snapshot
+ * the original PathScript values onto each module.
+ * After replacement, the tag moves into the rawscript value.
+ */
+export function snapshotPathScripts(flowValue: any) {
+  if (flowValue?.modules) {
+    snapshotInModules(flowValue.modules);
+  }
+  if (flowValue?.failure_module) {
+    snapshotInModules([flowValue.failure_module]);
+  }
+  if (flowValue?.preprocessor_module) {
+    snapshotInModules([flowValue.preprocessor_module]);
+  }
+}
+
+function snapshotInModules(modules: any[]) {
   for (const module of modules) {
     if (!module.value) {
       continue;
     }
     if (module.value.type === "script") {
-      map.set(module.id, {
-        originalValue: JSON.parse(JSON.stringify(module.value)),
-        injectedContent: "", // filled after replacement
-      });
+      // Snapshot the original value before replacement mutates it
+      module[TAG_KEY] = JSON.parse(JSON.stringify(module.value));
     } else if (
       module.value.type === "forloopflow" ||
       module.value.type === "whileloopflow"
     ) {
-      collectFromModules(module.value.modules, map);
+      snapshotInModules(module.value.modules);
     } else if (module.value.type === "branchall") {
       for (const branch of module.value.branches ?? []) {
-        collectFromModules(branch.modules, map);
+        snapshotInModules(branch.modules);
       }
     } else if (module.value.type === "branchone") {
       for (const branch of module.value.branches ?? []) {
-        collectFromModules(branch.modules, map);
+        snapshotInModules(branch.modules);
       }
       if (module.value.default) {
-        collectFromModules(module.value.default, map);
+        snapshotInModules(module.value.default);
       }
     } else if (module.value.type === "aiagent") {
       for (const tool of module.value.tools ?? []) {
         const tv = tool.value;
         if (tv?.tool_type === "flowmodule" && tv.type === "script") {
-          const key = `${module.id}:${tool.id}`;
-          map.set(key, {
-            originalToolValue: JSON.parse(JSON.stringify(tv)),
-            injectedContent: "",
-          });
+          tool[TAG_KEY] = JSON.parse(JSON.stringify(tv));
         }
       }
     }
   }
 }
 
-/**
- * After replaceAllPathScriptsWithLocal has mutated the flow, call this
- * to record what content was injected into each replaced module.
- */
-export function recordInjectedContent(
-  flowValue: any,
-  map: PathScriptMap
-) {
-  if (flowValue?.modules) {
-    recordFromModules(flowValue.modules, map);
-  }
-  if (flowValue?.failure_module) {
-    recordFromModules([flowValue.failure_module], map);
-  }
-  if (flowValue?.preprocessor_module) {
-    recordFromModules([flowValue.preprocessor_module], map);
-  }
-}
-
-function recordFromModules(modules: any[], map: PathScriptMap) {
+function tagInModules(modules: any[]) {
   for (const module of modules) {
     if (!module.value) {
       continue;
     }
-    if (module.value.type === "rawscript" && map.has(module.id)) {
-      const entry = map.get(module.id)! as ReplacedPathScript;
-      entry.injectedContent = module.value.content;
+    // If we snapshotted an original value and the module was replaced (now rawscript),
+    // move the tag into module.value so it travels through the iframe round-trip
+    if (module[TAG_KEY] && module.value.type === "rawscript") {
+      module.value[TAG_KEY] = module[TAG_KEY];
+      delete module[TAG_KEY];
     } else if (
       module.value.type === "forloopflow" ||
       module.value.type === "whileloopflow"
     ) {
-      recordFromModules(module.value.modules, map);
+      tagInModules(module.value.modules);
     } else if (module.value.type === "branchall") {
       for (const branch of module.value.branches ?? []) {
-        recordFromModules(branch.modules, map);
+        tagInModules(branch.modules);
       }
     } else if (module.value.type === "branchone") {
       for (const branch of module.value.branches ?? []) {
-        recordFromModules(branch.modules, map);
+        tagInModules(branch.modules);
       }
       if (module.value.default) {
-        recordFromModules(module.value.default, map);
+        tagInModules(module.value.default);
       }
     } else if (module.value.type === "aiagent") {
       for (const tool of module.value.tools ?? []) {
-        const key = `${module.id}:${tool.id}`;
-        if (tool.value?.type === "rawscript" && map.has(key)) {
-          const entry = map.get(key)! as ReplacedToolScript;
-          entry.injectedContent = tool.value.content;
+        if (tool[TAG_KEY] && tool.value?.type === "rawscript") {
+          tool.value[TAG_KEY] = tool[TAG_KEY];
+          delete tool[TAG_KEY];
         }
       }
     }
@@ -133,63 +116,48 @@ function recordFromModules(modules: any[], map: PathScriptMap) {
 
 /**
  * Restores PathScript modules in a flow returned from the webview.
- * Only restores if the content was not modified by the user.
+ * Any module with a `_originalPathScript` tag gets restored unconditionally.
+ * The tag is removed after restoration.
  */
-export function restorePathScripts(flowValue: any, map: PathScriptMap) {
+export function restorePathScripts(flowValue: any) {
   if (flowValue?.modules) {
-    restoreInModules(flowValue.modules, map);
+    restoreInModules(flowValue.modules);
   }
   if (flowValue?.failure_module) {
-    restoreInModules([flowValue.failure_module], map);
+    restoreInModules([flowValue.failure_module]);
   }
   if (flowValue?.preprocessor_module) {
-    restoreInModules([flowValue.preprocessor_module], map);
+    restoreInModules([flowValue.preprocessor_module]);
   }
 }
 
-function restoreInModules(modules: any[], map: PathScriptMap) {
+function restoreInModules(modules: any[]) {
   for (const module of modules) {
     if (!module.value) {
       continue;
     }
-    if (module.value.type === "rawscript" && map.has(module.id)) {
-      const entry = map.get(module.id)! as ReplacedPathScript;
-      if (module.value.content === entry.injectedContent) {
-        // Content unchanged — restore to PathScript.
-        // Preserve input_transforms from the returned module (user may have changed them).
-        module.value = {
-          ...entry.originalValue,
-          input_transforms: module.value.input_transforms,
-        };
-      }
-      // If content was changed by user, keep the rawscript as-is.
+    if (module.value[TAG_KEY]) {
+      module.value = module.value[TAG_KEY];
     } else if (
       module.value.type === "forloopflow" ||
       module.value.type === "whileloopflow"
     ) {
-      restoreInModules(module.value.modules, map);
+      restoreInModules(module.value.modules);
     } else if (module.value.type === "branchall") {
       for (const branch of module.value.branches ?? []) {
-        restoreInModules(branch.modules, map);
+        restoreInModules(branch.modules);
       }
     } else if (module.value.type === "branchone") {
       for (const branch of module.value.branches ?? []) {
-        restoreInModules(branch.modules, map);
+        restoreInModules(branch.modules);
       }
       if (module.value.default) {
-        restoreInModules(module.value.default, map);
+        restoreInModules(module.value.default);
       }
     } else if (module.value.type === "aiagent") {
       for (const tool of module.value.tools ?? []) {
-        const key = `${module.id}:${tool.id}`;
-        if (tool.value?.type === "rawscript" && map.has(key)) {
-          const entry = map.get(key)! as ReplacedToolScript;
-          if (tool.value.content === entry.injectedContent) {
-            tool.value = {
-              ...entry.originalToolValue,
-              input_transforms: tool.value.input_transforms,
-            };
-          }
+        if (tool.value?.[TAG_KEY]) {
+          tool.value = tool.value[TAG_KEY];
         }
       }
     }
