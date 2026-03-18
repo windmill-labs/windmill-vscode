@@ -8,20 +8,53 @@
 
 const TAG_KEY = "_originalPathScript";
 
+interface ModuleVisitor {
+  onModule(module: any): void;
+  onTool(tool: any): void;
+}
+
 /**
- * After replaceAllPathScriptsWithLocal has mutated the flow, call this
- * to tag each replaced module with its original PathScript value.
- * Must be called AFTER replacement (modules are now rawscript).
+ * Recursively walks all modules in a flow, visiting leaf modules and AI agent tools.
+ * Handles branchone, branchall, forloopflow, whileloopflow, and aiagent nesting.
  */
-export function tagReplacedPathScripts(flowValue: any) {
+function walkModules(modules: any[], visitor: ModuleVisitor) {
+  for (const module of modules) {
+    if (!module.value) {
+      continue;
+    }
+    const type = module.value.type;
+    if (type === "forloopflow" || type === "whileloopflow") {
+      walkModules(module.value.modules, visitor);
+    } else if (type === "branchall") {
+      for (const branch of module.value.branches ?? []) {
+        walkModules(branch.modules, visitor);
+      }
+    } else if (type === "branchone") {
+      for (const branch of module.value.branches ?? []) {
+        walkModules(branch.modules, visitor);
+      }
+      if (module.value.default) {
+        walkModules(module.value.default, visitor);
+      }
+    } else if (type === "aiagent") {
+      for (const tool of module.value.tools ?? []) {
+        visitor.onTool(tool);
+      }
+    } else {
+      visitor.onModule(module);
+    }
+  }
+}
+
+function walkFlow(flowValue: any, visitor: ModuleVisitor) {
   if (flowValue?.modules) {
-    tagInModules(flowValue.modules);
+    walkModules(flowValue.modules, visitor);
   }
   if (flowValue?.failure_module) {
-    tagInModules([flowValue.failure_module]);
+    walkModules([flowValue.failure_module], visitor);
   }
   if (flowValue?.preprocessor_module) {
-    tagInModules([flowValue.preprocessor_module]);
+    walkModules([flowValue.preprocessor_module], visitor);
   }
 }
 
@@ -31,92 +64,46 @@ export function tagReplacedPathScripts(flowValue: any) {
  * After replacement, the tag moves into the rawscript value.
  */
 export function snapshotPathScripts(flowValue: any) {
-  if (flowValue?.modules) {
-    snapshotInModules(flowValue.modules);
-  }
-  if (flowValue?.failure_module) {
-    snapshotInModules([flowValue.failure_module]);
-  }
-  if (flowValue?.preprocessor_module) {
-    snapshotInModules([flowValue.preprocessor_module]);
-  }
+  walkFlow(flowValue, {
+    onModule(module) {
+      if (module.value.type === "script") {
+        module[TAG_KEY] = JSON.parse(JSON.stringify(module.value));
+      }
+    },
+    onTool(tool) {
+      const tv = tool.value;
+      if (tv?.tool_type === "flowmodule" && tv.type === "script") {
+        tool[TAG_KEY] = JSON.parse(JSON.stringify(tv));
+      }
+    },
+  });
 }
 
-function snapshotInModules(modules: any[]) {
-  for (const module of modules) {
-    if (!module.value) {
-      continue;
-    }
-    if (module.value.type === "script") {
-      // Snapshot the original value before replacement mutates it
-      module[TAG_KEY] = JSON.parse(JSON.stringify(module.value));
-    } else if (
-      module.value.type === "forloopflow" ||
-      module.value.type === "whileloopflow"
-    ) {
-      snapshotInModules(module.value.modules);
-    } else if (module.value.type === "branchall") {
-      for (const branch of module.value.branches ?? []) {
-        snapshotInModules(branch.modules);
+/**
+ * After replaceAllPathScriptsWithLocal has mutated the flow, call this
+ * to tag each replaced module with its original PathScript value.
+ * Must be called AFTER replacement (modules are now rawscript).
+ */
+export function tagReplacedPathScripts(flowValue: any) {
+  walkFlow(flowValue, {
+    onModule(module) {
+      if (module[TAG_KEY] && module.value.type === "rawscript") {
+        module.value[TAG_KEY] = module[TAG_KEY];
+        delete module[TAG_KEY];
+      } else if (module[TAG_KEY]) {
+        // Module was snapshotted but not replaced (local file not found) — clean up
+        delete module[TAG_KEY];
       }
-    } else if (module.value.type === "branchone") {
-      for (const branch of module.value.branches ?? []) {
-        snapshotInModules(branch.modules);
+    },
+    onTool(tool) {
+      if (tool[TAG_KEY] && tool.value?.type === "rawscript") {
+        tool.value[TAG_KEY] = tool[TAG_KEY];
+        delete tool[TAG_KEY];
+      } else if (tool[TAG_KEY]) {
+        delete tool[TAG_KEY];
       }
-      if (module.value.default) {
-        snapshotInModules(module.value.default);
-      }
-    } else if (module.value.type === "aiagent") {
-      for (const tool of module.value.tools ?? []) {
-        const tv = tool.value;
-        if (tv?.tool_type === "flowmodule" && tv.type === "script") {
-          tool[TAG_KEY] = JSON.parse(JSON.stringify(tv));
-        }
-      }
-    }
-  }
-}
-
-function tagInModules(modules: any[]) {
-  for (const module of modules) {
-    if (!module.value) {
-      continue;
-    }
-    // If we snapshotted an original value and the module was replaced (now rawscript),
-    // move the tag into module.value so it travels through the iframe round-trip
-    if (module[TAG_KEY] && module.value.type === "rawscript") {
-      module.value[TAG_KEY] = module[TAG_KEY];
-      delete module[TAG_KEY];
-    } else if (module[TAG_KEY]) {
-      // Module was snapshotted but not replaced (local file not found) — clean up
-      delete module[TAG_KEY];
-    } else if (
-      module.value.type === "forloopflow" ||
-      module.value.type === "whileloopflow"
-    ) {
-      tagInModules(module.value.modules);
-    } else if (module.value.type === "branchall") {
-      for (const branch of module.value.branches ?? []) {
-        tagInModules(branch.modules);
-      }
-    } else if (module.value.type === "branchone") {
-      for (const branch of module.value.branches ?? []) {
-        tagInModules(branch.modules);
-      }
-      if (module.value.default) {
-        tagInModules(module.value.default);
-      }
-    } else if (module.value.type === "aiagent") {
-      for (const tool of module.value.tools ?? []) {
-        if (tool[TAG_KEY] && tool.value?.type === "rawscript") {
-          tool.value[TAG_KEY] = tool[TAG_KEY];
-          delete tool[TAG_KEY];
-        } else if (tool[TAG_KEY]) {
-          delete tool[TAG_KEY];
-        }
-      }
-    }
-  }
+    },
+  });
 }
 
 /**
@@ -125,46 +112,16 @@ function tagInModules(modules: any[]) {
  * The tag is removed after restoration.
  */
 export function restorePathScripts(flowValue: any) {
-  if (flowValue?.modules) {
-    restoreInModules(flowValue.modules);
-  }
-  if (flowValue?.failure_module) {
-    restoreInModules([flowValue.failure_module]);
-  }
-  if (flowValue?.preprocessor_module) {
-    restoreInModules([flowValue.preprocessor_module]);
-  }
-}
-
-function restoreInModules(modules: any[]) {
-  for (const module of modules) {
-    if (!module.value) {
-      continue;
-    }
-    if (module.value[TAG_KEY]) {
-      module.value = module.value[TAG_KEY];
-    } else if (
-      module.value.type === "forloopflow" ||
-      module.value.type === "whileloopflow"
-    ) {
-      restoreInModules(module.value.modules);
-    } else if (module.value.type === "branchall") {
-      for (const branch of module.value.branches ?? []) {
-        restoreInModules(branch.modules);
+  walkFlow(flowValue, {
+    onModule(module) {
+      if (module.value[TAG_KEY]) {
+        module.value = module.value[TAG_KEY];
       }
-    } else if (module.value.type === "branchone") {
-      for (const branch of module.value.branches ?? []) {
-        restoreInModules(branch.modules);
+    },
+    onTool(tool) {
+      if (tool.value?.[TAG_KEY]) {
+        tool.value = tool.value[TAG_KEY];
       }
-      if (module.value.default) {
-        restoreInModules(module.value.default);
-      }
-    } else if (module.value.type === "aiagent") {
-      for (const tool of module.value.tools ?? []) {
-        if (tool.value?.[TAG_KEY]) {
-          tool.value = tool.value[TAG_KEY];
-        }
-      }
-    }
-  }
+    },
+  });
 }
