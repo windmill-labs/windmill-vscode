@@ -54,7 +54,7 @@ export function determineLanguage(
     case "cs":
       return "csharp";
     case "nu":
-      return "nushell";
+      return "nu";
     case "java":
       return "java";
     default:

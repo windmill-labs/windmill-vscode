@@ -11,6 +11,7 @@ import {
   isArrayEqual,
   readModulesFromDisk,
   isScriptModulePath,
+  resolveInlineLock,
 } from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
 import {
@@ -214,9 +215,10 @@ export function activate(context: vscode.ExtensionContext) {
           );
 
           // Replace PathScript modules with local file content so previews use local versions
-          if (flow?.value && rootPath) {
+          if (flow?.value) {
+            const rootUriStr = targetEditor.document.uri.toString().split(cpath)[0];
             const localScriptReader = createLocalScriptReader(
-              rootPath,
+              rootUriStr,
               lastDefaultTs,
               channel
             );
@@ -236,27 +238,12 @@ export function activate(context: vscode.ExtensionContext) {
           let lock: string | undefined = undefined;
           let tag: string | undefined = undefined;
           const scriptBaseUri = targetEditor.document.uri.toString().split(cpath)[0] + wmPath;
+          const scriptRootUri = targetEditor.document.uri.toString().split(cpath)[0];
           const metadataUri = vscode.Uri.parse(scriptBaseUri + ".script.yaml");
           if (await fileExists(metadataUri)) {
             const rd = await readTextFromUri(metadataUri);
             const config = (yaml.parse(rd) as any) ?? {};
-            let nlock = config?.["lock"];
-            if (
-              nlock &&
-              typeof nlock === "string" &&
-              nlock.trimStart().startsWith("!inline ")
-            ) {
-              const lockRelPath = nlock.split(" ")[1];
-              const editorRootPath = getRootPath(targetEditor);
-              const uriPath = editorRootPath + "/" + lockRelPath;
-              try {
-                channel.appendLine("reading lock file: " + uriPath);
-                nlock = await readTextFromUri(vscode.Uri.parse(uriPath));
-              } catch (e) {
-                channel.appendLine(`Lock file ${lockRelPath} not found: ${e}`);
-              }
-            }
-            lock = nlock;
+            lock = await resolveInlineLock(config?.["lock"], scriptRootUri, channel);
             tag = config?.["tag"];
           }
 
