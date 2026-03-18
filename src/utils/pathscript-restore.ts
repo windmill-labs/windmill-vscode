@@ -87,6 +87,9 @@ function tagInModules(modules: any[]) {
     if (module[TAG_KEY] && module.value.type === "rawscript") {
       module.value[TAG_KEY] = module[TAG_KEY];
       delete module[TAG_KEY];
+    } else if (module[TAG_KEY]) {
+      // Module was snapshotted but not replaced (local file not found) — clean up
+      delete module[TAG_KEY];
     } else if (
       module.value.type === "forloopflow" ||
       module.value.type === "whileloopflow"
@@ -107,6 +110,8 @@ function tagInModules(modules: any[]) {
       for (const tool of module.value.tools ?? []) {
         if (tool[TAG_KEY] && tool.value?.type === "rawscript") {
           tool.value[TAG_KEY] = tool[TAG_KEY];
+          delete tool[TAG_KEY];
+        } else if (tool[TAG_KEY]) {
           delete tool[TAG_KEY];
         }
       }

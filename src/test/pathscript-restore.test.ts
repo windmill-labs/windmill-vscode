@@ -256,10 +256,22 @@ describe("pathscript-restore", () => {
 
       expect(result.modules[0].value.type).toBe("script");
       expect(result.modules[0].value.path).toBe("f/test/helper_add");
-      // mod2 was never replaced — snapshot is on the module object, not module.value,
-      // so it doesn't survive JSON round-trip and restore is a no-op
       expect(result.modules[1].value.type).toBe("script");
       expect(result.modules[1].value.path).toBe("f/test/not_found");
+    });
+
+    it("cleans up snapshot on unreplaced modules so it does not leak", () => {
+      const mod = makeScriptModule("a", "f/test/not_found");
+      const flowValue = { modules: [mod] };
+
+      snapshotPathScripts(flowValue);
+      // NOT replaced — stays as type: "script"
+      tagReplacedPathScripts(flowValue);
+
+      // The snapshot should be cleaned up from the module object
+      expect((mod as any)._originalPathScript).toBeUndefined();
+      // And not present in the value either
+      expect((mod.value as any)._originalPathScript).toBeUndefined();
     });
   });
 
