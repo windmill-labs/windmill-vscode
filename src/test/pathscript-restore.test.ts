@@ -1,3 +1,4 @@
+import type { FlowValue } from "windmill-client";
 import {
   snapshotPathScripts,
   tagReplacedPathScripts,
@@ -210,7 +211,7 @@ describe("pathscript-restore", () => {
       };
       const flowValue = {
         modules: [{ id: "agent", value: { type: "aiagent", tools: [tool] } }],
-      };
+      } as unknown as FlowValue;
 
       snapshotPathScripts(flowValue);
       simulateToolReplacement(tool, "tool content", "bun");
@@ -230,7 +231,7 @@ describe("pathscript-restore", () => {
         id: "a",
         value: { type: "rawscript", content: "inline content", language: "bun" },
       };
-      const flowValue = { modules: [rawModule] };
+      const flowValue = { modules: [rawModule] } as unknown as FlowValue;
 
       // No PathScripts to snapshot, so snapshot/tag are no-ops
       snapshotPathScripts(flowValue);
