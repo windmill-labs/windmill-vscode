@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as yaml from "yaml";
 import { LocalScriptInfo } from "windmill-utils-internal";
 import { determineLanguage } from "../helpers";
-import { fileExists, readTextFromUri, resolveInlineLock, scriptExts } from "./file-utils";
+import { fileExists, readTextFromUri, resolveInlineLock, scriptExts, joinUriPath } from "./file-utils";
 
 /**
  * Creates a script reader function that resolves local PathScript files
@@ -18,7 +18,7 @@ export function createLocalScriptReader(
   channel: vscode.OutputChannel
 ): (scriptPath: string) => Promise<LocalScriptInfo | undefined> {
   return async (scriptPath: string): Promise<LocalScriptInfo | undefined> => {
-    const baseUri = rootUri + scriptPath;
+    const baseUri = joinUriPath(rootUri, scriptPath);
 
     for (const ext of scriptExts) {
       const fileUri = vscode.Uri.parse(baseUri + ext);
