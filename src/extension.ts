@@ -12,6 +12,7 @@ import {
   readModulesFromDisk,
   isScriptModulePath,
   resolveInlineLock,
+  sanitizePathSegment,
 } from "./utils/file-utils";
 import { loadConfigForPath, findCodebase } from "./config/config-manager";
 import {
@@ -29,6 +30,7 @@ import {
   replaceAllPathScriptsWithLocal,
   extractInlineScripts,
   extractCurrentMapping,
+  newPathAssigner,
 } from "windmill-utils-internal";
 import { getGitHeadPath } from "./utils/git-utils";
 import { GitBranchConfig } from "./config/config-manager";
@@ -547,12 +549,24 @@ export function activate(context: vscode.ExtensionContext) {
             let inlineScriptMapping = {};
             extractCurrentMapping(currentLoadedFlow, inlineScriptMapping);
 
+            const baseAssigner = newPathAssigner(
+              lastDefaultTs ?? "bun",
+              { skipInlineScriptSuffix: lastNonDottedPaths }
+            );
+            const sanitizingAssigner = {
+              assignPath(summary: string | undefined, language: any) {
+                return baseAssigner.assignPath(
+                  summary != null ? sanitizePathSegment(summary) : summary,
+                  language
+                );
+              },
+            };
             const allExtracted = extractInlineScripts(
               message?.flow?.value?.modules ?? [],
               inlineScriptMapping,
               "/",
               lastDefaultTs ?? "bun",
-              undefined,
+              sanitizingAssigner,
               { skipInlineScriptSuffix: lastNonDottedPaths }
             );
             await Promise.all(

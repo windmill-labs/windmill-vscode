@@ -54,6 +54,16 @@ export const scriptExts = [".py", ".ts", ".go", ".sh", ".sql", ".gql", ".ps1", "
   ".fetch.ts", ".bun.ts", ".deno.ts", ".pg.sql", ".my.sql", ".bq.sql", ".sf.sql", ".ms.sql"];
 
 /**
+ * Sanitizes a string for safe use as a single path segment (file/directory name).
+ * Removes path separators, control characters, and OS-reserved filename characters.
+ */
+export function sanitizePathSegment(name: string): string {
+  // Remove control characters (0x00-0x1F), path separators, and OS-reserved chars
+  // eslint-disable-next-line no-control-regex
+  return name.replace(/[\x00-\x1f\\/:<>"|?*]/g, "");
+}
+
+/**
  * Resolves an !inline lock reference to its actual file content.
  * If the value is not an !inline reference, returns it as-is.
  */
