@@ -1,0 +1,58 @@
+name: Publish Extension
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubicloud-standard-8
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for version bump
+        id: version
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          PREVIOUS=$(git show HEAD~1:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version")
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "version=$CURRENT" >> $GITHUB_OUTPUT
+            echo "Version bumped: $PREVIOUS -> $CURRENT"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No version change"
+          fi
+
+      - name: Setup Node.js
+        if: steps.version.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Install dependencies
+        if: steps.version.outputs.changed == 'true'
+        run: npm ci
+
+      - name: Install vsce and ovsx
+        if: steps.version.outputs.changed == 'true'
+        run: npm install -g @vscode/vsce ovsx
+
+      - name: Package extension
+        if: steps.version.outputs.changed == 'true'
+        run: vsce package
+
+      - name: Publish to VS Code Marketplace
+        if: steps.version.outputs.changed == 'true'
+        run: vsce publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX
+        if: steps.version.outputs.changed == 'true'
+        run: ovsx publish windmill-${{ steps.version.outputs.version }}.vsix
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
