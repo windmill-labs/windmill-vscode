@@ -83,6 +83,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
   let myStatusBarItem: vscode.StatusBarItem | undefined = undefined;
+  let pendingFlowMessage: any = undefined;
+  let flowDebounceTimer: ReturnType<typeof setTimeout> | undefined = undefined;
   let channel = vscode.window.createOutputChannel("windmill");
   const switchRemoteId = "windmill.switchWorkspace";
 
@@ -483,6 +485,142 @@ export function activate(context: vscode.ExtensionContext) {
         context.subscriptions
       );
     }
+    async function processFlowMessage(message: any) {
+      let currentLoadedFlow: FlowModule[] | undefined = undefined;
+      let currentLoadedFailureModule: FlowModule | undefined = undefined;
+      let currentLoadedPreprocessorModule: FlowModule | undefined = undefined;
+
+      try {
+        if (lastFlowDocument) {
+          const parsedFlow = parseYamlWithInline(lastFlowDocument?.getText() || "") as any;
+          currentLoadedFlow = parsedFlow?.["value"]?.["modules"] as FlowModule[];
+          if (!Array.isArray(currentLoadedFlow)) {
+            currentLoadedFlow = undefined;
+          }
+          currentLoadedFailureModule = parsedFlow?.["value"]?.["failure_module"] as FlowModule | undefined;
+          currentLoadedPreprocessorModule = parsedFlow?.["value"]?.["preprocessor_module"] as FlowModule | undefined;
+        }
+      } catch {}
+
+      let uri = vscode.Uri.parse(message.uriPath);
+
+      // Restore PathScript modules that were replaced for preview
+      // Must happen before extractInlineScripts to avoid creating spurious files
+      if (message?.flow?.value) {
+        restorePathScripts(message.flow.value);
+      }
+
+      let dirPath = uri.toString().split("/").slice(0, -1).join("/");
+      let inlineScriptMapping: Record<string, string> = {};
+      extractCurrentMapping(
+        currentLoadedFlow,
+        inlineScriptMapping,
+        currentLoadedFailureModule,
+        currentLoadedPreprocessorModule
+      );
+
+      const extractOptions = { skipInlineScriptSuffix: lastNonDottedPaths };
+      const pathAssigner = newPathAssigner(lastDefaultTs ?? "bun", extractOptions);
+
+      const allExtracted = extractInlineScripts(
+        message?.flow?.value?.modules ?? [],
+        inlineScriptMapping,
+        "/",
+        lastDefaultTs ?? "bun",
+        pathAssigner,
+        extractOptions
+      );
+      if (message?.flow?.value?.failure_module?.value?.type === "rawscript") {
+        allExtracted.push(...extractInlineScripts(
+          [message.flow.value.failure_module],
+          inlineScriptMapping,
+          "/",
+          lastDefaultTs ?? "bun",
+          pathAssigner,
+          extractOptions
+        ));
+      }
+      if (message?.flow?.value?.preprocessor_module?.value?.type === "rawscript") {
+        allExtracted.push(...extractInlineScripts(
+          [message.flow.value.preprocessor_module],
+          inlineScriptMapping,
+          "/",
+          lastDefaultTs ?? "bun",
+          pathAssigner,
+          extractOptions
+        ));
+      }
+      await Promise.all(
+        allExtracted.map(async (s) => {
+          let inlineUri = vscode.Uri.parse(dirPath + "/" + s.path);
+          let exists = await fileExists(inlineUri);
+
+          if (s.content.startsWith("!inline ")) {
+            if (!exists) {
+              await vscode.workspace.fs.writeFile(
+                inlineUri,
+                new TextEncoder().encode("")
+              );
+            }
+            return;
+          }
+          let encoded = new TextEncoder().encode(s.content);
+
+          if (
+            !exists ||
+            !isArrayEqual(
+              encoded,
+              await vscode.workspace.fs.readFile(inlineUri)
+            )
+          ) {
+            await vscode.workspace.fs.writeFile(
+              inlineUri,
+              new TextEncoder().encode(s.content)
+            );
+          }
+        })
+      );
+
+      if (!lastFlowDocument) {
+        return;
+      }
+      let currentText = lastFlowDocument?.getText() ?? "";
+      let text = yaml.stringify(message.flow);
+      if (text.trimEnd() === currentText.trimEnd()) {
+        return;
+      }
+      let splitted = currentText.split("\n");
+      let edit = new vscode.WorkspaceEdit();
+      edit.replace(
+        lastFlowDocument.uri,
+        new vscode.Range(
+          new vscode.Position(0, 0),
+          new vscode.Position(
+            splitted.length,
+            splitted[splitted.length - 1].length
+          )
+        ),
+        text
+      );
+      await vscode.workspace.applyEdit(edit);
+      await lastFlowDocument?.save();
+      const dir = await vscode.workspace.fs.readDirectory(
+        vscode.Uri.parse(dirPath)
+      );
+      for (const f of dir.entries()) {
+        let oldFile = f[1][0];
+
+        if (
+          !oldFile.endsWith("flow.yaml") &&
+          allExtracted.find((s) => s.path === oldFile) === undefined
+        ) {
+          await vscode.workspace.fs.delete(
+            vscode.Uri.parse(dirPath + "/" + oldFile)
+          );
+        }
+      }
+    }
+
     currentPanel.webview.onDidReceiveMessage(
       async (message) => {
         switch (message.type) {
@@ -527,146 +665,21 @@ export function activate(context: vscode.ExtensionContext) {
             );
             return;
           case "flow":
-            let currentLoadedFlow: FlowModule[] | undefined = undefined;
-            let currentLoadedFailureModule: FlowModule | undefined = undefined;
-            let currentLoadedPreprocessorModule: FlowModule | undefined = undefined;
-
-            try {
-              if (lastFlowDocument) {
-                const parsedFlow = parseYamlWithInline(lastFlowDocument?.getText() || "") as any;
-                currentLoadedFlow = parsedFlow?.["value"]?.["modules"] as FlowModule[];
-                if (!Array.isArray(currentLoadedFlow)) {
-                  currentLoadedFlow = undefined;
-                }
-                currentLoadedFailureModule = parsedFlow?.["value"]?.["failure_module"] as FlowModule | undefined;
-                currentLoadedPreprocessorModule = parsedFlow?.["value"]?.["preprocessor_module"] as FlowModule | undefined;
-              }
-            } catch {}
-
-            // channel.appendLine("flow message");
-            let uri = vscode.Uri.parse(message.uriPath);
             if (!message.uriPath?.endsWith("flow.yaml")) {
               return;
             }
-
-            // Restore PathScript modules that were replaced for preview
-            // Must happen before extractInlineScripts to avoid creating spurious files
-            if (message?.flow?.value) {
-              restorePathScripts(message.flow.value);
+            pendingFlowMessage = message;
+            if (flowDebounceTimer) {
+              clearTimeout(flowDebounceTimer);
             }
-
-            let dirPath = uri.toString().split("/").slice(0, -1).join("/");
-            let inlineScriptMapping = {};
-            extractCurrentMapping(
-              currentLoadedFlow,
-              inlineScriptMapping,
-              currentLoadedFailureModule,
-              currentLoadedPreprocessorModule
-            );
-
-            const extractOptions = { skipInlineScriptSuffix: lastNonDottedPaths };
-            const pathAssigner = newPathAssigner(lastDefaultTs ?? "bun", extractOptions);
-
-            const allExtracted = extractInlineScripts(
-              message?.flow?.value?.modules ?? [],
-              inlineScriptMapping,
-              "/",
-              lastDefaultTs ?? "bun",
-              pathAssigner,
-              extractOptions
-            );
-            if (message?.flow?.value?.failure_module?.value?.type === "rawscript") {
-              allExtracted.push(...extractInlineScripts(
-                [message.flow.value.failure_module],
-                inlineScriptMapping,
-                "/",
-                lastDefaultTs ?? "bun",
-                pathAssigner,
-                extractOptions
-              ));
-            }
-            if (message?.flow?.value?.preprocessor_module?.value?.type === "rawscript") {
-              allExtracted.push(...extractInlineScripts(
-                [message.flow.value.preprocessor_module],
-                inlineScriptMapping,
-                "/",
-                lastDefaultTs ?? "bun",
-                pathAssigner,
-                extractOptions
-              ));
-            }
-            await Promise.all(
-              allExtracted.map(async (s) => {
-                let inlineUri = vscode.Uri.parse(dirPath + "/" + s.path);
-                let exists = await fileExists(inlineUri);
-
-                if (s.content.startsWith("!inline ")) {
-                  if (!exists) {
-                    await vscode.workspace.fs.writeFile(
-                      inlineUri,
-                      new TextEncoder().encode("")
-                    );
-                  }
-                  return;
-                }
-                let encoded = new TextEncoder().encode(s.content);
-
-                if (
-                  !exists ||
-                  !isArrayEqual(
-                    encoded,
-                    await vscode.workspace.fs.readFile(inlineUri)
-                  )
-                ) {
-                  await vscode.workspace.fs.writeFile(
-                    inlineUri,
-                    new TextEncoder().encode(s.content)
-                  );
-                }
-              })
-            );
-
-            if (!lastFlowDocument) {
-              return;
-            }
-            let currentFlow = "";
-            try {
-              currentFlow = JSON.stringify(currentLoadedFlow);
-            } catch {}
-            if (JSON.stringify(message.flow) !== currentFlow) {
-              let splitted = (lastFlowDocument?.getText() ?? "").split("\n");
-              let edit = new vscode.WorkspaceEdit();
-              let text = yaml.stringify(message.flow);
-              edit.replace(
-                lastFlowDocument.uri,
-                new vscode.Range(
-                  new vscode.Position(0, 0),
-                  new vscode.Position(
-                    splitted.length,
-                    splitted[splitted.length - 1].length
-                  )
-                ),
-                text
-              );
-              await vscode.workspace.applyEdit(edit);
-              await lastFlowDocument?.save();
-              const dir = await vscode.workspace.fs.readDirectory(
-                vscode.Uri.parse(dirPath)
-              );
-              for (const f of dir.entries()) {
-                let oldFile = f[1][0];
-
-                if (
-                  !oldFile.endsWith("flow.yaml") &&
-                  allExtracted.find((s) => s.path === oldFile) === undefined
-                ) {
-                  await vscode.workspace.fs.delete(
-                    vscode.Uri.parse(dirPath + "/" + oldFile)
-                  );
-                }
+            flowDebounceTimer = setTimeout(() => {
+              const msg = pendingFlowMessage;
+              pendingFlowMessage = undefined;
+              flowDebounceTimer = undefined;
+              if (msg) {
+                processFlowMessage(msg);
               }
-            }
-
+            }, 200);
             return;
         }
       },
