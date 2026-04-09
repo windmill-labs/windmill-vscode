@@ -212,14 +212,7 @@ export function activate(context: vscode.ExtensionContext) {
           const inlineFileReader = async (path: string) => {
             const fpath =
               uriPath.split("/").slice(0, -1).join("/") + "/" + path;
-            const fileUri = vscode.Uri.parse(fpath);
-            const openDoc = vscode.workspace.textDocuments.find(
-              (d) => d.uri.toString() === fileUri.toString()
-            );
-            if (openDoc) {
-              return openDoc.getText();
-            }
-            return await readTextFromUri(fileUri);
+            return await readTextFromUri(vscode.Uri.parse(fpath));
           };
 
           await replaceInlineScripts(
