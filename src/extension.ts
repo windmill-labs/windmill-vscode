@@ -29,6 +29,7 @@ import {
   replaceAllPathScriptsWithLocal,
   extractInlineScripts,
   extractCurrentMapping,
+  newPathAssigner,
 } from "windmill-utils-internal";
 import { getGitHeadPath } from "./utils/git-utils";
 import { GitBranchConfig } from "./config/config-manager";
@@ -208,16 +209,24 @@ export function activate(context: vscode.ExtensionContext) {
               error: (...args: any[]) => channel.appendLine(args.join(" ")),
             };
 
+          const inlineFileReader = async (path: string) => {
+            const fpath =
+              uriPath.split("/").slice(0, -1).join("/") + "/" + path;
+            return await readTextFromUri(vscode.Uri.parse(fpath));
+          };
+
           await replaceInlineScripts(
             flow?.value?.modules,
-            async (path) => {
-              const fpath =
-                uriPath.split("/").slice(0, -1).join("/") + "/" + path;
-              return await readTextFromUri(vscode.Uri.parse(fpath));
-            },
+            inlineFileReader,
             flowLogger,
             uriPath
           );
+          if (flow?.value?.failure_module) {
+            await replaceInlineScripts([flow.value.failure_module], inlineFileReader, flowLogger, uriPath);
+          }
+          if (flow?.value?.preprocessor_module) {
+            await replaceInlineScripts([flow.value.preprocessor_module], inlineFileReader, flowLogger, uriPath);
+          }
 
           // Replace PathScript modules with local file content so previews use local versions
           if (flow?.value) {
@@ -519,15 +528,18 @@ export function activate(context: vscode.ExtensionContext) {
             return;
           case "flow":
             let currentLoadedFlow: FlowModule[] | undefined = undefined;
+            let currentLoadedFailureModule: FlowModule | undefined = undefined;
+            let currentLoadedPreprocessorModule: FlowModule | undefined = undefined;
 
             try {
               if (lastFlowDocument) {
-                currentLoadedFlow = (
-                  parseYamlWithInline(lastFlowDocument?.getText() || "") as any
-                )?.["value"]?.["modules"] as FlowModule[];
+                const parsedFlow = parseYamlWithInline(lastFlowDocument?.getText() || "") as any;
+                currentLoadedFlow = parsedFlow?.["value"]?.["modules"] as FlowModule[];
                 if (!Array.isArray(currentLoadedFlow)) {
                   currentLoadedFlow = undefined;
                 }
+                currentLoadedFailureModule = parsedFlow?.["value"]?.["failure_module"] as FlowModule | undefined;
+                currentLoadedPreprocessorModule = parsedFlow?.["value"]?.["preprocessor_module"] as FlowModule | undefined;
               }
             } catch {}
 
@@ -545,21 +557,59 @@ export function activate(context: vscode.ExtensionContext) {
 
             let dirPath = uri.toString().split("/").slice(0, -1).join("/");
             let inlineScriptMapping = {};
-            extractCurrentMapping(currentLoadedFlow, inlineScriptMapping);
+            extractCurrentMapping(
+              currentLoadedFlow,
+              inlineScriptMapping,
+              currentLoadedFailureModule,
+              currentLoadedPreprocessorModule
+            );
+
+            const extractOptions = { skipInlineScriptSuffix: lastNonDottedPaths };
+            const pathAssigner = newPathAssigner(lastDefaultTs ?? "bun", extractOptions);
 
             const allExtracted = extractInlineScripts(
               message?.flow?.value?.modules ?? [],
               inlineScriptMapping,
               "/",
               lastDefaultTs ?? "bun",
-              undefined,
-              { skipInlineScriptSuffix: lastNonDottedPaths }
+              pathAssigner,
+              extractOptions
             );
+            if (message?.flow?.value?.failure_module?.value?.type === "rawscript") {
+              allExtracted.push(...extractInlineScripts(
+                [message.flow.value.failure_module],
+                inlineScriptMapping,
+                "/",
+                lastDefaultTs ?? "bun",
+                pathAssigner,
+                extractOptions
+              ));
+            }
+            if (message?.flow?.value?.preprocessor_module?.value?.type === "rawscript") {
+              allExtracted.push(...extractInlineScripts(
+                [message.flow.value.preprocessor_module],
+                inlineScriptMapping,
+                "/",
+                lastDefaultTs ?? "bun",
+                pathAssigner,
+                extractOptions
+              ));
+            }
             await Promise.all(
               allExtracted.map(async (s) => {
-                let encoded = new TextEncoder().encode(s.content);
                 let inlineUri = vscode.Uri.parse(dirPath + "/" + s.path);
                 let exists = await fileExists(inlineUri);
+
+                if (s.content.startsWith("!inline ")) {
+                  if (!exists) {
+                    await vscode.workspace.fs.writeFile(
+                      inlineUri,
+                      new TextEncoder().encode("")
+                    );
+                  }
+                  return;
+                }
+                let encoded = new TextEncoder().encode(s.content);
 
                 if (
                   !exists ||
@@ -568,12 +618,10 @@ export function activate(context: vscode.ExtensionContext) {
                     await vscode.workspace.fs.readFile(inlineUri)
                   )
                 ) {
-                  vscode.workspace.fs.writeFile(
+                  await vscode.workspace.fs.writeFile(
                     inlineUri,
                     new TextEncoder().encode(s.content)
                   );
-                } else {
-                  // channel.appendLine("same content");
                 }
               })
             );

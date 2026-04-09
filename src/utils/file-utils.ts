@@ -11,6 +11,12 @@ export async function fileExists(uri: vscode.Uri): Promise<boolean> {
 }
 
 export async function readTextFromUri(uri: vscode.Uri): Promise<string> {
+  const openDoc = vscode.workspace.textDocuments.find(
+    (d) => d.uri.toString() === uri.toString()
+  );
+  if (openDoc) {
+    return openDoc.getText();
+  }
   const bytes = await vscode.workspace.fs.readFile(uri);
   return new TextDecoder().decode(bytes);
 }
