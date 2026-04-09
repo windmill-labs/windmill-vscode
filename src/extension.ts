@@ -597,13 +597,19 @@ export function activate(context: vscode.ExtensionContext) {
             }
             await Promise.all(
               allExtracted.map(async (s) => {
+                let inlineUri = vscode.Uri.parse(dirPath + "/" + s.path);
+                let exists = await fileExists(inlineUri);
+
                 if (s.content.startsWith("!inline ")) {
-                  channel.appendLine("Skipping write of unresolved inline reference: " + s.path);
+                  if (!exists) {
+                    await vscode.workspace.fs.writeFile(
+                      inlineUri,
+                      new TextEncoder().encode("")
+                    );
+                  }
                   return;
                 }
                 let encoded = new TextEncoder().encode(s.content);
-                let inlineUri = vscode.Uri.parse(dirPath + "/" + s.path);
-                let exists = await fileExists(inlineUri);
 
                 if (
                   !exists ||
@@ -616,8 +622,6 @@ export function activate(context: vscode.ExtensionContext) {
                     inlineUri,
                     new TextEncoder().encode(s.content)
                   );
-                } else {
-                  // channel.appendLine("same content");
                 }
               })
             );
