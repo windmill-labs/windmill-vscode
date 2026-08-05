@@ -32,7 +32,7 @@ import {
   newPathAssigner,
 } from "windmill-utils-internal";
 import { getGitHeadPath } from "./utils/git-utils";
-import { GitBranchConfig } from "./config/config-manager";
+import { WorkspacesConfig } from "./config/config-manager";
 import { createLocalScriptReader } from "./utils/local-path-scripts";
 import {
   snapshotPathScripts,
@@ -129,7 +129,7 @@ export function activate(context: vscode.ExtensionContext) {
   let lastNonDottedPaths = false;
   let codebaseFound: Codebase | undefined = undefined;
   let pinnedFileUri: vscode.Uri | undefined = undefined;
-  let lastGitBranchConfig: GitBranchConfig | undefined = undefined;
+  let lastWorkspacesConfig: WorkspacesConfig | undefined = undefined;
   let gitHeadWatcher: vscode.FileSystemWatcher | undefined = undefined;
 
   async function refreshPanel(
@@ -195,7 +195,7 @@ export function activate(context: vscode.ExtensionContext) {
       codebaseFound = cpath.endsWith(".ts")
         ? findCodebase(wmPath, configResult.codebases)
         : undefined;
-      lastGitBranchConfig = configResult.gitBranches;
+      lastWorkspacesConfig = configResult.workspaces;
     }
 
     const lang = determineLanguage(cpath, lastDefaultTs);
@@ -322,10 +322,10 @@ export function activate(context: vscode.ExtensionContext) {
       channel.appendLine("Checking git branch for workspace switch...");
       const result = await checkAndSwitchWorkspaceForGitBranch(
         channel,
-        lastGitBranchConfig
+        lastWorkspacesConfig
       );
       if (result.config) {
-        lastGitBranchConfig = result.config;
+        lastWorkspacesConfig = result.config;
       }
 
       // Step 3: Setup git watcher
@@ -370,9 +370,9 @@ export function activate(context: vscode.ExtensionContext) {
         // Re-sync CLI config before checking branch
         await syncVSCodeConfigFromCLI(channel);
         
-        const result = await checkAndSwitchWorkspaceForGitBranch(channel, lastGitBranchConfig);
+        const result = await checkAndSwitchWorkspaceForGitBranch(channel, lastWorkspacesConfig);
         if (result.config) {
-          lastGitBranchConfig = result.config;
+          lastWorkspacesConfig = result.config;
         }
 
         // Refresh the panel if it's open and workspace was switched
@@ -391,9 +391,9 @@ export function activate(context: vscode.ExtensionContext) {
         // Re-sync CLI config before checking branch
         await syncVSCodeConfigFromCLI(channel);
         
-        const result = await checkAndSwitchWorkspaceForGitBranch(channel, lastGitBranchConfig);
+        const result = await checkAndSwitchWorkspaceForGitBranch(channel, lastWorkspacesConfig);
         if (result.config) {
-          lastGitBranchConfig = result.config;
+          lastWorkspacesConfig = result.config;
         }
         
         // Refresh the panel if it's open and workspace was switched
@@ -432,10 +432,10 @@ export function activate(context: vscode.ExtensionContext) {
       channel.appendLine("Checking git branch for workspace switch...");
       const gitBranchResult = await checkAndSwitchWorkspaceForGitBranch(
         channel,
-        lastGitBranchConfig
+        lastWorkspacesConfig
       );
       if (gitBranchResult.config) {
-        lastGitBranchConfig = gitBranchResult.config;
+        lastWorkspacesConfig = gitBranchResult.config;
       }
       channel.appendLine(`Git branch workspace switch: ${gitBranchResult.switched}`);
     } catch (e) {

@@ -1,6 +1,11 @@
 import * as vscode from "vscode";
 import { getWorkspaceConfigFilePath, getActiveWorkspaceConfigFilePath } from "windmill-utils-internal";
-import { GitBranchConfig, loadConfigForPath } from "../config/config-manager";
+import {
+  WorkspacesConfig,
+  findWorkspaceByGitBranch,
+  getEffectiveWorkspaceId,
+  loadConfigForPath,
+} from "../config/config-manager";
 import { getCurrentGitBranch } from "../utils/git-utils";
 
 let globalStatusBarItem: vscode.StatusBarItem | undefined = undefined;
@@ -197,13 +202,13 @@ export async function syncVSCodeConfigFromCLI(
 /**
  * Check the current git branch and switch workspace if configured
  * @param channel Output channel for logging
- * @param cachedGitBranchConfig Optional cached gitBranches config to avoid reloading
+ * @param cachedWorkspacesConfig Optional cached workspaces config to avoid reloading
  * @returns Object with switched status and loaded config for caching
  */
 export async function checkAndSwitchWorkspaceForGitBranch(
   channel: vscode.OutputChannel,
-  cachedGitBranchConfig: GitBranchConfig | undefined
-): Promise<{ switched: boolean; config?: GitBranchConfig }> {
+  cachedWorkspacesConfig: WorkspacesConfig | undefined
+): Promise<{ switched: boolean; config?: WorkspacesConfig }> {
   try {
     // Get current git branch
     const currentBranch = await getCurrentGitBranch();
@@ -214,10 +219,10 @@ export async function checkAndSwitchWorkspaceForGitBranch(
 
     channel.appendLine(`Current git branch: ${currentBranch}`);
 
-    let gitBranches = cachedGitBranchConfig;
+    let workspaces = cachedWorkspacesConfig;
 
     // If we don't have the config cached yet, load it
-    if (!gitBranches) {
+    if (!workspaces) {
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         channel.appendLine("No workspace folder found");
@@ -227,17 +232,17 @@ export async function checkAndSwitchWorkspaceForGitBranch(
       const rootPath = workspaceFolders[0].uri.toString();
       // Call loadConfigForPath with empty string to check root wmill.yaml
       const config = await loadConfigForPath("", rootPath, channel);
-      gitBranches = config.gitBranches;
+      workspaces = config.workspaces;
     }
 
-    if (!gitBranches) {
-      channel.appendLine("No gitBranches configuration found in wmill.yaml");
+    if (!workspaces) {
+      channel.appendLine("No workspaces configuration found in wmill.yaml");
       return { switched: false, config: undefined };
     }
 
     // Switch workspace based on branch (checks against VSCode config internally)
-    const switched = await switchWorkspaceForBranch(currentBranch, gitBranches, channel);
-    return { switched, config: gitBranches };
+    const switched = await switchWorkspaceForBranch(currentBranch, workspaces, channel);
+    return { switched, config: workspaces };
   } catch (error) {
     channel.appendLine(`Error checking git branch for workspace switch: ${error}`);
     console.error("Error checking git branch:", error);
@@ -246,45 +251,61 @@ export async function checkAndSwitchWorkspaceForGitBranch(
 }
 
 /**
+ * Normalize a remote URL the same way the CLI does when storing workspace
+ * profiles, so that config-file and settings-entered URLs compare equal.
+ */
+function normalizeRemote(remote: string): string {
+  try {
+    return new URL(remote).toString();
+  } catch {
+    return remote.endsWith("/") ? remote : remote + "/";
+  }
+}
+
+/**
  * Switch workspace based on git branch configuration
  * @param branchName The current git branch name
- * @param gitBranchConfig The gitBranches configuration from wmill.yaml
+ * @param workspacesConfig The workspaces configuration from wmill.yaml
  * @param channel Optional output channel for logging
  * @returns true if workspace was switched, false otherwise
  */
 export async function switchWorkspaceForBranch(
   branchName: string,
-  gitBranchConfig: GitBranchConfig | undefined,
+  workspacesConfig: WorkspacesConfig | undefined,
   channel?: vscode.OutputChannel
 ): Promise<boolean> {
-  if (!gitBranchConfig || !branchName) {
-    channel?.appendLine(`No git branch config or branch name provided. Skipping workspace switch.`);
+  if (!workspacesConfig || !branchName) {
+    channel?.appendLine(`No workspaces config or branch name provided. Skipping workspace switch.`);
     return false;
   }
 
-  const branchWorkspace = gitBranchConfig[branchName];
-  if (!branchWorkspace) {
+  const match = findWorkspaceByGitBranch(workspacesConfig, branchName);
+  if (!match) {
     channel?.appendLine(`No workspace configuration found for branch: ${branchName}. Keeping current workspace.`);
     return false;
   }
+  const [wsName, branchWorkspace] = match;
 
   try {
-    const { baseUrl, workspaceId } = branchWorkspace;
-    
-    if (!baseUrl || !workspaceId) {
-      channel?.appendLine(`Invalid workspace configuration for branch ${branchName}. Missing baseUrl or workspaceId.`);
+    const { baseUrl } = branchWorkspace;
+    const workspaceId = getEffectiveWorkspaceId(wsName, branchWorkspace);
+
+    if (!baseUrl) {
+      channel?.appendLine(
+        `Workspace "${wsName}" (branch ${branchName}) has no baseUrl in wmill.yaml. Cannot resolve a workspace to switch to.`
+      );
       return false;
     }
 
-    // Normalize the base URL to ensure it ends with /
-    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+    const normalizedBaseUrl = normalizeRemote(baseUrl);
 
     // Get all workspaces from VSCode config (includes both CLI-synced and manually configured)
     const vscodeWorkspaces = getWorkspacesFromVSCodeConfig();
-    
+
     // Check if this workspace exists in VSCode config
     const matchingWorkspace = vscodeWorkspaces.find(
-      (w: Workspace) => w.remote === normalizedBaseUrl && w.workspaceId === workspaceId
+      (w: Workspace) =>
+        normalizeRemote(w.remote) === normalizedBaseUrl && w.workspaceId === workspaceId
     );
 
     if (!matchingWorkspace) {
