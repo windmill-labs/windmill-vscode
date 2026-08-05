@@ -4,6 +4,7 @@ import { getLastUsedProfile } from "../config/branch-profiles";
 import {
   __configuration,
   __informationMessages,
+  __outputChannel,
   __resetConfiguration,
 } from "./vscode-stub";
 
@@ -62,10 +63,17 @@ describe("resolving between several matching workspaces", () => {
   it("falls back to the first match and says so when nothing is remembered", async () => {
     mockedGetLastUsedProfile.mockResolvedValue(undefined);
 
-    expect(await switchWorkspaceForBranch("main", workspaces)).toBe(true);
+    const channel = __outputChannel();
+    expect(await switchWorkspaceForBranch("main", workspaces, channel)).toBe(true);
     expect(__configuration().currentWorkspace).toBe("cm-personal");
     expect(__informationMessages[0]).toContain("cm-personal");
     expect(__informationMessages[0]).toContain("Windmill: Switch workspace");
+    // The log names every candidate so the user can tell them apart
+    expect(
+      channel.lines.some(
+        (l: string) => l.includes("cm-personal") && l.includes("cm-service")
+      )
+    ).toBe(true);
   });
 
   it("falls back when the remembered profile is no longer configured", async () => {

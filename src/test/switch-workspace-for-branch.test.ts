@@ -1,6 +1,15 @@
-import { switchWorkspaceForBranch } from "../workspace/workspace-manager";
+import {
+  setGlobalStatusBarItem,
+  setWorkspaceStatus,
+  switchWorkspaceForBranch,
+} from "../workspace/workspace-manager";
 import { WorkspacesConfig } from "../config/config-manager";
-import { __configuration, __resetConfiguration } from "./vscode-stub";
+import {
+  __configuration,
+  __failConfigurationUpdates,
+  __outputChannel,
+  __resetConfiguration,
+} from "./vscode-stub";
 
 const REMOTE = "https://windmill.example.net/";
 
@@ -127,6 +136,60 @@ describe("switchWorkspaceForBranch", () => {
 
     expect(await switchWorkspaceForBranch("commonSpecificItems", workspaces)).toBe(false);
     expect(__configuration().currentWorkspace).toBe("ir");
+  });
+});
+
+describe("switchWorkspaceForBranch failure handling", () => {
+  it("matches a baseUrl that is not a parseable URL", async () => {
+    __resetConfiguration(settings([profile("cm-prod", "cm", "windmill.example.net")]));
+    const workspaces: WorkspacesConfig = {
+      cm: { baseUrl: "windmill.example.net", gitBranch: "main" },
+    };
+
+    expect(await switchWorkspaceForBranch("main", workspaces)).toBe(true);
+    expect(__configuration().currentWorkspace).toBe("cm-prod");
+  });
+
+  it("reports a failed settings write instead of throwing", async () => {
+    __resetConfiguration(settings([profile("cm-prod", "cm")], "ir"));
+    __failConfigurationUpdates(new Error("settings are read-only"));
+    const workspaces: WorkspacesConfig = { cm: { baseUrl: REMOTE, gitBranch: "main" } };
+
+    const channel = __outputChannel();
+    expect(await switchWorkspaceForBranch("main", workspaces, channel)).toBe(false);
+    expect(
+      channel.lines.some((l: string) => l.includes("settings are read-only"))
+    ).toBe(true);
+  });
+});
+
+describe("the workspace status bar", () => {
+  it("shows the selected workspace", () => {
+    __resetConfiguration({ currentWorkspace: "cm-prod" });
+    const item = { text: "", show: jest.fn() };
+
+    setGlobalStatusBarItem(item as any);
+    setWorkspaceStatus();
+
+    expect(item.text).toBe("WM: cm-prod");
+    expect(item.show).toHaveBeenCalled();
+  });
+
+  it("falls back to main when no workspace is selected", () => {
+    __resetConfiguration();
+    const item = { text: "", show: jest.fn() };
+
+    setWorkspaceStatus(item as any);
+    expect(item.text).toBe("WM: main");
+  });
+
+  it("is updated when the branch switches the workspace", async () => {
+    __resetConfiguration(settings([profile("cm-prod", "cm")], "ir"));
+    const item = { text: "", show: jest.fn() };
+    setGlobalStatusBarItem(item as any);
+
+    await switchWorkspaceForBranch("main", { cm: { baseUrl: REMOTE, gitBranch: "main" } });
+    expect(item.text).toBe("WM: cm-prod");
   });
 });
 
