@@ -4,6 +4,10 @@ import {
   getEffectiveGitBranch,
   getEffectiveWorkspaceId,
 } from "../config/config-manager";
+import {
+  getOriginalBranchForWorkspaceForks,
+  getWorkspaceIdForWorkspaceForkFromBranchName,
+} from "../utils/git-utils";
 
 describe("extractWorkspacesConfig", () => {
   it("reads the `workspaces` key", () => {
@@ -71,6 +75,41 @@ describe("findWorkspaceByGitBranch", () => {
   it("returns undefined for an unknown branch or missing config", () => {
     expect(findWorkspaceByGitBranch({ main: {} }, "dev")).toBeUndefined();
     expect(findWorkspaceByGitBranch(undefined, "main")).toBeUndefined();
+  });
+});
+
+describe("workspace fork branches", () => {
+  it("resolves the base branch and the fork workspace id", () => {
+    expect(getOriginalBranchForWorkspaceForks("wm-fork/main/abc")).toBe("main");
+    expect(getWorkspaceIdForWorkspaceForkFromBranchName("wm-fork/main/abc")).toBe(
+      "wm-fork-abc"
+    );
+  });
+
+  it("supports base branches containing slashes", () => {
+    expect(getOriginalBranchForWorkspaceForks("wm-fork/feat/foo/abc")).toBe("feat/foo");
+    expect(getWorkspaceIdForWorkspaceForkFromBranchName("wm-fork/feat/foo/abc")).toBe(
+      "wm-fork-abc"
+    );
+  });
+
+  it("returns undefined for non-fork and malformed branches", () => {
+    for (const branch of [undefined, "main", "wm-fork", "wm-fork/main", "wm-fork/main/"]) {
+      expect(getOriginalBranchForWorkspaceForks(branch)).toBeUndefined();
+      expect(getWorkspaceIdForWorkspaceForkFromBranchName(branch)).toBeUndefined();
+    }
+  });
+
+  it("looks the base branch up in wmill.yaml, not the fork branch", () => {
+    // The base branch entry only supplies the remote; the target workspace id
+    // comes from the branch name.
+    const workspaces = {
+      cm: { baseUrl: "https://windmill.example.net/", gitBranch: "main", workspaceId: "cm" },
+    };
+    const branch = "wm-fork/main/abc";
+    const base = getOriginalBranchForWorkspaceForks(branch)!;
+    expect(findWorkspaceByGitBranch(workspaces, branch)).toBeUndefined();
+    expect(findWorkspaceByGitBranch(workspaces, base)?.[0]).toBe("cm");
   });
 });
 
