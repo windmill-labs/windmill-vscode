@@ -6,6 +6,7 @@ import {
   getEffectiveWorkspaceId,
   loadConfigForPath,
 } from "../config/config-manager";
+import { getLastUsedProfile } from "../config/branch-profiles";
 import {
   getCurrentGitBranch,
   getOriginalBranchForWorkspaceForks,
@@ -267,6 +268,63 @@ function normalizeRemote(remote: string): string {
 }
 
 /**
+ * Pick which of several workspaces sharing a remote and workspace id to use.
+ * They differ only by token, so this chooses the identity to act as: follow the
+ * choice the user already made in the CLI when there is one, rather than
+ * interrupting a background branch switch with a prompt.
+ * @returns the chosen workspace, and whether the choice was ambiguous and
+ * unresolved (worth surfacing to the user)
+ */
+async function resolveMatchingWorkspace(
+  candidates: Workspace[],
+  workspaceName: string,
+  normalizedBaseUrl: string,
+  workspaceId: string,
+  channel?: vscode.OutputChannel
+): Promise<{ workspace: Workspace; ambiguous: boolean }> {
+  if (candidates.length === 1) {
+    return { workspace: candidates[0], ambiguous: false };
+  }
+
+  const configFolder = vscode.workspace
+    .getConfiguration("windmill")
+    .get("configFolder") as string;
+
+  // Best-effort: a workspace we cannot read the CLI's choice from still switches,
+  // it just falls back to the first match below.
+  let lastUsedName: string | undefined;
+  try {
+    lastUsedName = await getLastUsedProfile(
+      workspaceName,
+      normalizedBaseUrl,
+      workspaceId,
+      configFolder
+    );
+  } catch (error) {
+    channel?.appendLine(`Could not read the CLI's last used profile: ${error}`);
+  }
+
+  const lastUsed = lastUsedName
+    ? candidates.find((w) => w.name === lastUsedName)
+    : undefined;
+
+  if (lastUsed) {
+    channel?.appendLine(
+      `${candidates.length} workspaces match "${workspaceId}" at "${normalizedBaseUrl}". ` +
+      `Using "${lastUsed.name}", last used by the CLI for workspace "${workspaceName}".`
+    );
+    return { workspace: lastUsed, ambiguous: false };
+  }
+
+  channel?.appendLine(
+    `${candidates.length} workspaces match "${workspaceId}" at "${normalizedBaseUrl}" ` +
+    `(${candidates.map((w) => w.name).join(", ")}) and the CLI has no remembered choice for ` +
+    `workspace "${workspaceName}". Using "${candidates[0].name}".`
+  );
+  return { workspace: candidates[0], ambiguous: true };
+}
+
+/**
  * Register (or refresh) the derived workspace entry for a fork workspace: the
  * parent's remote and auth, with the fork's workspace id. `syncVSCodeConfigFromCLI`
  * rewrites `additionalWorkspaces` wholesale from the CLI profiles, so this runs
@@ -370,18 +428,26 @@ export async function switchWorkspaceForBranch(
     const vscodeWorkspaces = getWorkspacesFromVSCodeConfig();
 
     // Check if this workspace exists in VSCode config
-    const matchingWorkspace = vscodeWorkspaces.find(
+    const matchingWorkspaces = vscodeWorkspaces.filter(
       (w: Workspace) =>
         normalizeRemote(w.remote) === normalizedBaseUrl && w.workspaceId === workspaceId
     );
 
-    if (!matchingWorkspace) {
+    if (matchingWorkspaces.length === 0) {
       channel?.appendLine(
         `Workspace "${workspaceId}" at "${normalizedBaseUrl}" not found in VSCode configuration. ` +
         `Please configure this workspace in VSCode settings before switching to branch "${branchName}".`
       );
       return false;
     }
+
+    const { workspace: matchingWorkspace, ambiguous } = await resolveMatchingWorkspace(
+      matchingWorkspaces,
+      wsName,
+      normalizedBaseUrl,
+      workspaceId,
+      channel
+    );
 
     // The CLI never saves a profile for a fork workspace — it derives one from the
     // parent's at command time. Do the same here, since switching requires a named
@@ -401,7 +467,9 @@ export async function switchWorkspaceForBranch(
     await conf.update("currentWorkspace", targetName, vscode.ConfigurationTarget.Global);
     channel?.appendLine(`Switched to workspace "${targetName}" for branch: ${branchName}`);
     vscode.window.showInformationMessage(
-      `Switched to workspace "${targetName}"`
+      ambiguous
+        ? `Switched to workspace "${targetName}". Several profiles match it — run "Windmill: Switch workspace" to pick another.`
+        : `Switched to workspace "${targetName}"`
     );
     setWorkspaceStatus();
     return true;

@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/naming-convention */
+// Names here mirror the `vscode` API surface, plus `__`-prefixed test hooks.
+//
 // Minimal stand-in for the `vscode` module so that unit tests can import
 // extension sources that pull it in at module load time. The configuration is
 // backed by a mutable in-memory store so tests can drive and assert on the
