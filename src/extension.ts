@@ -32,7 +32,7 @@ import {
   newPathAssigner,
 } from "windmill-utils-internal";
 import { getGitHeadPath } from "./utils/git-utils";
-import { GitBranchConfig } from "./config/config-manager";
+import { WorkspacesConfig } from "./config/config-manager";
 import { createLocalScriptReader } from "./utils/local-path-scripts";
 import {
   snapshotPathScripts,
@@ -129,8 +129,9 @@ export function activate(context: vscode.ExtensionContext) {
   let lastNonDottedPaths = false;
   let codebaseFound: Codebase | undefined = undefined;
   let pinnedFileUri: vscode.Uri | undefined = undefined;
-  let lastGitBranchConfig: GitBranchConfig | undefined = undefined;
+  let lastWorkspacesConfig: WorkspacesConfig | undefined = undefined;
   let gitHeadWatcher: vscode.FileSystemWatcher | undefined = undefined;
+  let wmillYamlWatcher: vscode.FileSystemWatcher | undefined = undefined;
 
   async function refreshPanel(
     editor: vscode.TextEditor | undefined,
@@ -195,7 +196,7 @@ export function activate(context: vscode.ExtensionContext) {
       codebaseFound = cpath.endsWith(".ts")
         ? findCodebase(wmPath, configResult.codebases)
         : undefined;
-      lastGitBranchConfig = configResult.gitBranches;
+      lastWorkspacesConfig = configResult.workspaces;
     }
 
     const lang = determineLanguage(cpath, lastDefaultTs);
@@ -322,14 +323,15 @@ export function activate(context: vscode.ExtensionContext) {
       channel.appendLine("Checking git branch for workspace switch...");
       const result = await checkAndSwitchWorkspaceForGitBranch(
         channel,
-        lastGitBranchConfig
+        lastWorkspacesConfig
       );
       if (result.config) {
-        lastGitBranchConfig = result.config;
+        lastWorkspacesConfig = result.config;
       }
 
-      // Step 3: Setup git watcher
+      // Step 3: Setup watchers
       await setupGitBranchWatcher();
+      await setupWmillYamlWatcher();
     } catch (error) {
       channel.appendLine(`Error initializing workspace: ${error}`);
       console.error("Error initializing workspace:", error);
@@ -364,52 +366,85 @@ export function activate(context: vscode.ExtensionContext) {
         new vscode.RelativePattern(workspaceFolders[0], ".git/HEAD")
       );
 
-      // Watch for changes to .git/HEAD (which happens on branch switch)
-      gitHeadWatcher.onDidChange(async () => {
-        channel.appendLine("Git HEAD changed, re-syncing config and checking for workspace switch");
+      const onGitHeadChanged = async (rsn: string) => {
+        channel.appendLine(`${rsn}, re-syncing config and checking for workspace switch`);
         // Re-sync CLI config before checking branch
         await syncVSCodeConfigFromCLI(channel);
-        
-        const result = await checkAndSwitchWorkspaceForGitBranch(channel, lastGitBranchConfig);
-        if (result.config) {
-          lastGitBranchConfig = result.config;
-        }
+        await applyWorkspaceForCurrentBranch();
+      };
 
-        // Refresh the panel if it's open and workspace was switched
-        if (result.switched && currentPanel) {
-          channel.appendLine("Refreshing panel with new workspace configuration");
-          currentPanel.webview.html = getWebviewContent();
-          if (lastActiveEditor) {
-            refreshPanel(lastActiveEditor, "workspace switch from git branch");
-          }
-        }
-      });
+      // Watch for changes to .git/HEAD (which happens on branch switch)
+      gitHeadWatcher.onDidChange(() => onGitHeadChanged("Git HEAD changed"));
 
       // Also watch for onCreate since git sometimes replaces the file
-      gitHeadWatcher.onDidCreate(async () => {
-        channel.appendLine("Git HEAD created, re-syncing config and checking for workspace switch");
-        // Re-sync CLI config before checking branch
-        await syncVSCodeConfigFromCLI(channel);
-        
-        const result = await checkAndSwitchWorkspaceForGitBranch(channel, lastGitBranchConfig);
-        if (result.config) {
-          lastGitBranchConfig = result.config;
-        }
-        
-        // Refresh the panel if it's open and workspace was switched
-        if (result.switched && currentPanel) {
-          channel.appendLine("Refreshing panel with new workspace configuration");
-          currentPanel.webview.html = getWebviewContent();
-          if (lastActiveEditor) {
-            refreshPanel(lastActiveEditor, "workspace switch from git branch");
-          }
-        }
-      });
+      gitHeadWatcher.onDidCreate(() => onGitHeadChanged("Git HEAD created"));
 
       context.subscriptions.push(gitHeadWatcher);
     } catch (error) {
       channel.appendLine(`Error setting up git branch watcher: ${error}`);
       console.error("Error setting up git branch watcher:", error);
+    }
+  }
+
+  /**
+   * Re-check the current git branch against wmill.yaml and switch workspace if
+   * it maps to a different one, refreshing the panel when it does.
+   */
+  async function applyWorkspaceForCurrentBranch() {
+    const result = await checkAndSwitchWorkspaceForGitBranch(
+      channel,
+      lastWorkspacesConfig
+    );
+    if (result.config) {
+      lastWorkspacesConfig = result.config;
+    }
+
+    // Refresh the panel if it's open and workspace was switched
+    if (result.switched && currentPanel) {
+      channel.appendLine("Refreshing panel with new workspace configuration");
+      currentPanel.webview.html = getWebviewContent();
+      if (lastActiveEditor) {
+        refreshPanel(lastActiveEditor, "workspace switch from git branch");
+      }
+    }
+  }
+
+  /**
+   * The workspaces config is cached and otherwise only reloaded when the active
+   * editor changes, so edits to wmill.yaml would not take effect until then.
+   */
+  async function setupWmillYamlWatcher() {
+    try {
+      if (wmillYamlWatcher) {
+        wmillYamlWatcher.dispose();
+        wmillYamlWatcher = undefined;
+      }
+
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      if (!workspaceFolders || workspaceFolders.length === 0) {
+        channel.appendLine("No workspace folder found for wmill.yaml watcher");
+        return;
+      }
+
+      wmillYamlWatcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(workspaceFolders[0], "**/wmill.yaml")
+      );
+
+      const onWmillYamlChanged = async (uri: vscode.Uri) => {
+        channel.appendLine(`${uri.path} changed, reloading workspace configuration`);
+        // Drop the cache so the branch check re-reads wmill.yaml
+        lastWorkspacesConfig = undefined;
+        await applyWorkspaceForCurrentBranch();
+      };
+
+      wmillYamlWatcher.onDidChange(onWmillYamlChanged);
+      wmillYamlWatcher.onDidCreate(onWmillYamlChanged);
+      wmillYamlWatcher.onDidDelete(onWmillYamlChanged);
+
+      context.subscriptions.push(wmillYamlWatcher);
+    } catch (error) {
+      channel.appendLine(`Error setting up wmill.yaml watcher: ${error}`);
+      console.error("Error setting up wmill.yaml watcher:", error);
     }
   }
 
@@ -432,10 +467,10 @@ export function activate(context: vscode.ExtensionContext) {
       channel.appendLine("Checking git branch for workspace switch...");
       const gitBranchResult = await checkAndSwitchWorkspaceForGitBranch(
         channel,
-        lastGitBranchConfig
+        lastWorkspacesConfig
       );
       if (gitBranchResult.config) {
-        lastGitBranchConfig = gitBranchResult.config;
+        lastWorkspacesConfig = gitBranchResult.config;
       }
       channel.appendLine(`Git branch workspace switch: ${gitBranchResult.switched}`);
     } catch (e) {

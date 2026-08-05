@@ -9,4 +9,7 @@ module.exports = {
   "transform": {
     "^.+\\.(ts|tsx)$": "ts-jest"
   },
+  "moduleNameMapper": {
+    "^vscode$": "<rootDir>/src/test/vscode-stub.ts"
+  },
 };

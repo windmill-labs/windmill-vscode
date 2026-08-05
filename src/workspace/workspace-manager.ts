@@ -1,7 +1,17 @@
 import * as vscode from "vscode";
 import { getWorkspaceConfigFilePath, getActiveWorkspaceConfigFilePath } from "windmill-utils-internal";
-import { GitBranchConfig, loadConfigForPath } from "../config/config-manager";
-import { getCurrentGitBranch } from "../utils/git-utils";
+import {
+  WorkspacesConfig,
+  findWorkspaceByGitBranch,
+  getEffectiveWorkspaceId,
+  loadConfigForPath,
+} from "../config/config-manager";
+import { getLastUsedProfile } from "../config/branch-profiles";
+import {
+  getCurrentGitBranch,
+  getOriginalBranchForWorkspaceForks,
+  getWorkspaceIdForWorkspaceForkFromBranchName,
+} from "../utils/git-utils";
 
 let globalStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 
@@ -197,13 +207,13 @@ export async function syncVSCodeConfigFromCLI(
 /**
  * Check the current git branch and switch workspace if configured
  * @param channel Output channel for logging
- * @param cachedGitBranchConfig Optional cached gitBranches config to avoid reloading
+ * @param cachedWorkspacesConfig Optional cached workspaces config to avoid reloading
  * @returns Object with switched status and loaded config for caching
  */
 export async function checkAndSwitchWorkspaceForGitBranch(
   channel: vscode.OutputChannel,
-  cachedGitBranchConfig: GitBranchConfig | undefined
-): Promise<{ switched: boolean; config?: GitBranchConfig }> {
+  cachedWorkspacesConfig: WorkspacesConfig | undefined
+): Promise<{ switched: boolean; config?: WorkspacesConfig }> {
   try {
     // Get current git branch
     const currentBranch = await getCurrentGitBranch();
@@ -214,10 +224,10 @@ export async function checkAndSwitchWorkspaceForGitBranch(
 
     channel.appendLine(`Current git branch: ${currentBranch}`);
 
-    let gitBranches = cachedGitBranchConfig;
+    let workspaces = cachedWorkspacesConfig;
 
     // If we don't have the config cached yet, load it
-    if (!gitBranches) {
+    if (!workspaces) {
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         channel.appendLine("No workspace folder found");
@@ -227,17 +237,17 @@ export async function checkAndSwitchWorkspaceForGitBranch(
       const rootPath = workspaceFolders[0].uri.toString();
       // Call loadConfigForPath with empty string to check root wmill.yaml
       const config = await loadConfigForPath("", rootPath, channel);
-      gitBranches = config.gitBranches;
+      workspaces = config.workspaces;
     }
 
-    if (!gitBranches) {
-      channel.appendLine("No gitBranches configuration found in wmill.yaml");
+    if (!workspaces) {
+      channel.appendLine("No workspaces configuration found in wmill.yaml");
       return { switched: false, config: undefined };
     }
 
     // Switch workspace based on branch (checks against VSCode config internally)
-    const switched = await switchWorkspaceForBranch(currentBranch, gitBranches, channel);
-    return { switched, config: gitBranches };
+    const switched = await switchWorkspaceForBranch(currentBranch, workspaces, channel);
+    return { switched, config: workspaces };
   } catch (error) {
     channel.appendLine(`Error checking git branch for workspace switch: ${error}`);
     console.error("Error checking git branch:", error);
@@ -246,48 +256,184 @@ export async function checkAndSwitchWorkspaceForGitBranch(
 }
 
 /**
+ * Normalize a remote URL the same way the CLI does when storing workspace
+ * profiles, so that config-file and settings-entered URLs compare equal.
+ */
+function normalizeRemote(remote: string): string {
+  try {
+    return new URL(remote).toString();
+  } catch {
+    return remote.endsWith("/") ? remote : remote + "/";
+  }
+}
+
+/**
+ * Pick which of several workspaces sharing a remote and workspace id to use.
+ * They differ only by token, so this chooses the identity to act as: follow the
+ * choice the user already made in the CLI when there is one, rather than
+ * interrupting a background branch switch with a prompt.
+ * @returns the chosen workspace, and whether the choice was ambiguous and
+ * unresolved (worth surfacing to the user)
+ */
+async function resolveMatchingWorkspace(
+  candidates: Workspace[],
+  workspaceName: string,
+  normalizedBaseUrl: string,
+  workspaceId: string,
+  channel?: vscode.OutputChannel
+): Promise<{ workspace: Workspace; ambiguous: boolean }> {
+  if (candidates.length === 1) {
+    return { workspace: candidates[0], ambiguous: false };
+  }
+
+  const configFolder = vscode.workspace
+    .getConfiguration("windmill")
+    .get("configFolder") as string;
+
+  // Best-effort: a workspace we cannot read the CLI's choice from still switches,
+  // it just falls back to the first match below.
+  let lastUsedName: string | undefined;
+  try {
+    lastUsedName = await getLastUsedProfile(
+      workspaceName,
+      normalizedBaseUrl,
+      workspaceId,
+      configFolder
+    );
+  } catch (error) {
+    channel?.appendLine(`Could not read the CLI's last used profile: ${error}`);
+  }
+
+  const lastUsed = lastUsedName
+    ? candidates.find((w) => w.name === lastUsedName)
+    : undefined;
+
+  if (lastUsed) {
+    channel?.appendLine(
+      `${candidates.length} workspaces match "${workspaceId}" at "${normalizedBaseUrl}". ` +
+      `Using "${lastUsed.name}", last used by the CLI for workspace "${workspaceName}".`
+    );
+    return { workspace: lastUsed, ambiguous: false };
+  }
+
+  channel?.appendLine(
+    `${candidates.length} workspaces match "${workspaceId}" at "${normalizedBaseUrl}" ` +
+    `(${candidates.map((w) => w.name).join(", ")}) and the CLI has no remembered choice for ` +
+    `workspace "${workspaceName}". Using "${candidates[0].name}".`
+  );
+  return { workspace: candidates[0], ambiguous: true };
+}
+
+/**
+ * Register (or refresh) the derived workspace entry for a fork workspace: the
+ * parent's remote and auth, with the fork's workspace id. `syncVSCodeConfigFromCLI`
+ * rewrites `additionalWorkspaces` wholesale from the CLI profiles, so this runs
+ * after every sync to re-add the entry.
+ * @returns the name of the fork workspace entry
+ */
+async function ensureForkWorkspaceProfile(
+  parent: Workspace,
+  forkWorkspaceId: string,
+  branchName: string,
+  channel?: vscode.OutputChannel
+): Promise<string> {
+  const forkName = `${parent.name}/${forkWorkspaceId}`;
+  const entry = {
+    name: forkName,
+    remote: parent.remote,
+    workspaceId: forkWorkspaceId,
+    token: parent.token,
+  };
+
+  const conf = vscode.workspace.getConfiguration("windmill");
+  const additionalWorkspaces = ((conf.get("additionalWorkspaces") as any[]) ?? []).slice();
+  const existingIndex = additionalWorkspaces.findIndex((w) => w?.name === forkName);
+  const existing = existingIndex >= 0 ? additionalWorkspaces[existingIndex] : undefined;
+
+  const upToDate =
+    existing &&
+    existing.remote === entry.remote &&
+    existing.workspaceId === entry.workspaceId &&
+    existing.token === entry.token;
+
+  if (!upToDate) {
+    if (existingIndex >= 0) {
+      additionalWorkspaces[existingIndex] = entry;
+    } else {
+      additionalWorkspaces.push(entry);
+    }
+    await conf.update(
+      "additionalWorkspaces",
+      additionalWorkspaces,
+      vscode.ConfigurationTarget.Global
+    );
+    channel?.appendLine(
+      `Targeting fork workspace "${forkWorkspaceId}" (fork of "${parent.workspaceId}" on ${parent.remote}, ` +
+      `auth reused from workspace "${parent.name}"), resolved from git branch "${branchName}"`
+    );
+  }
+
+  return forkName;
+}
+
+/**
  * Switch workspace based on git branch configuration
  * @param branchName The current git branch name
- * @param gitBranchConfig The gitBranches configuration from wmill.yaml
+ * @param workspacesConfig The workspaces configuration from wmill.yaml
  * @param channel Optional output channel for logging
  * @returns true if workspace was switched, false otherwise
  */
 export async function switchWorkspaceForBranch(
   branchName: string,
-  gitBranchConfig: GitBranchConfig | undefined,
+  workspacesConfig: WorkspacesConfig | undefined,
   channel?: vscode.OutputChannel
 ): Promise<boolean> {
-  if (!gitBranchConfig || !branchName) {
-    channel?.appendLine(`No git branch config or branch name provided. Skipping workspace switch.`);
+  if (!workspacesConfig || !branchName) {
+    channel?.appendLine(`No workspaces config or branch name provided. Skipping workspace switch.`);
     return false;
   }
 
-  const branchWorkspace = gitBranchConfig[branchName];
-  if (!branchWorkspace) {
-    channel?.appendLine(`No workspace configuration found for branch: ${branchName}. Keeping current workspace.`);
+  // On a `wm-fork/<base>/<id>` branch the target is the fork workspace, whose id
+  // comes from the branch name itself. wmill.yaml is only consulted for the base
+  // branch's entry, which supplies the remote (and, through its profile, the auth)
+  // the fork is reached with.
+  const forkBaseBranch = getOriginalBranchForWorkspaceForks(branchName);
+  const forkWorkspaceId = getWorkspaceIdForWorkspaceForkFromBranchName(branchName);
+  const lookupBranch = forkBaseBranch ?? branchName;
+
+  const match = findWorkspaceByGitBranch(workspacesConfig, lookupBranch);
+  if (!match) {
+    const via = forkBaseBranch
+      ? `${branchName} (base branch ${forkBaseBranch})`
+      : branchName;
+    channel?.appendLine(`No workspace configuration found for branch: ${via}. Keeping current workspace.`);
     return false;
   }
+  const [wsName, branchWorkspace] = match;
 
   try {
-    const { baseUrl, workspaceId } = branchWorkspace;
-    
-    if (!baseUrl || !workspaceId) {
-      channel?.appendLine(`Invalid workspace configuration for branch ${branchName}. Missing baseUrl or workspaceId.`);
+    const { baseUrl } = branchWorkspace;
+    const workspaceId = getEffectiveWorkspaceId(wsName, branchWorkspace);
+
+    if (!baseUrl) {
+      channel?.appendLine(
+        `Workspace "${wsName}" (branch ${branchName}) has no baseUrl in wmill.yaml. Cannot resolve a workspace to switch to.`
+      );
       return false;
     }
 
-    // Normalize the base URL to ensure it ends with /
-    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+    const normalizedBaseUrl = normalizeRemote(baseUrl);
 
     // Get all workspaces from VSCode config (includes both CLI-synced and manually configured)
     const vscodeWorkspaces = getWorkspacesFromVSCodeConfig();
-    
+
     // Check if this workspace exists in VSCode config
-    const matchingWorkspace = vscodeWorkspaces.find(
-      (w: Workspace) => w.remote === normalizedBaseUrl && w.workspaceId === workspaceId
+    const matchingWorkspaces = vscodeWorkspaces.filter(
+      (w: Workspace) =>
+        normalizeRemote(w.remote) === normalizedBaseUrl && w.workspaceId === workspaceId
     );
 
-    if (!matchingWorkspace) {
+    if (matchingWorkspaces.length === 0) {
       channel?.appendLine(
         `Workspace "${workspaceId}" at "${normalizedBaseUrl}" not found in VSCode configuration. ` +
         `Please configure this workspace in VSCode settings before switching to branch "${branchName}".`
@@ -295,18 +441,35 @@ export async function switchWorkspaceForBranch(
       return false;
     }
 
+    const { workspace: matchingWorkspace, ambiguous } = await resolveMatchingWorkspace(
+      matchingWorkspaces,
+      wsName,
+      normalizedBaseUrl,
+      workspaceId,
+      channel
+    );
+
+    // The CLI never saves a profile for a fork workspace — it derives one from the
+    // parent's at command time. Do the same here, since switching requires a named
+    // workspace to exist in the VSCode configuration.
+    const targetName = forkWorkspaceId
+      ? await ensureForkWorkspaceProfile(matchingWorkspace, forkWorkspaceId, branchName, channel)
+      : matchingWorkspace.name;
+
     const conf = vscode.workspace.getConfiguration("windmill");
-    
+
     // Switch to the workspace using the name from config, if current workspace is not the same
-    if (conf.get("currentWorkspace") === matchingWorkspace.name) {
-      channel?.appendLine(`Already on workspace "${matchingWorkspace.name}"`);
+    if (conf.get("currentWorkspace") === targetName) {
+      channel?.appendLine(`Already on workspace "${targetName}"`);
       return true;
     }
 
-    await conf.update("currentWorkspace", matchingWorkspace.name, vscode.ConfigurationTarget.Global);
-    channel?.appendLine(`Switched to workspace "${matchingWorkspace.name}" for branch: ${branchName}`);
+    await conf.update("currentWorkspace", targetName, vscode.ConfigurationTarget.Global);
+    channel?.appendLine(`Switched to workspace "${targetName}" for branch: ${branchName}`);
     vscode.window.showInformationMessage(
-      `Switched to workspace "${matchingWorkspace.name}"`
+      ambiguous
+        ? `Switched to workspace "${targetName}". Several profiles match it — run "Windmill: Switch workspace" to pick another.`
+        : `Switched to workspace "${targetName}"`
     );
     setWorkspaceStatus();
     return true;

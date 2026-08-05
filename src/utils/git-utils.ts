@@ -1,6 +1,57 @@
 import * as vscode from "vscode";
 import { fileExists, readTextFromUri } from "./file-utils";
 
+// Branch prefix of workspace fork branches: `wm-fork/<base>/<id>`. The matching
+// *workspace id* prefix is `wm-fork-` (see the CLI's utils/git.ts).
+const WM_FORK_PREFIX = "wm-fork";
+
+/**
+ * Split a `wm-fork/<base>/<id>` branch into the base branch it was forked from
+ * and the id of the fork workspace it targets. The base may itself contain
+ * slashes. Returns undefined for any branch that isn't a well-formed fork branch.
+ */
+function parseForkBranch(
+  branchName: string | undefined
+): { base: string; forkWorkspaceId: string } | undefined {
+  if (!branchName || !branchName.startsWith(`${WM_FORK_PREFIX}/`)) {
+    return undefined;
+  }
+
+  const start = WM_FORK_PREFIX.length + 1;
+  const end = branchName.lastIndexOf("/");
+
+  if (end <= start) {
+    return undefined;
+  }
+
+  const id = branchName.slice(end + 1);
+  if (id.length === 0) {
+    return undefined;
+  }
+
+  return { base: branchName.slice(start, end), forkWorkspaceId: `${WM_FORK_PREFIX}-${id}` };
+}
+
+/**
+ * For a `wm-fork/<base>/<id>` branch, the base branch it was forked from.
+ * Returns undefined for any other branch.
+ */
+export function getOriginalBranchForWorkspaceForks(
+  branchName: string | undefined
+): string | undefined {
+  return parseForkBranch(branchName)?.base;
+}
+
+/**
+ * For a `wm-fork/<base>/<id>` branch, the id of the fork workspace it targets.
+ * Returns undefined for any other branch.
+ */
+export function getWorkspaceIdForWorkspaceForkFromBranchName(
+  branchName: string | undefined
+): string | undefined {
+  return parseForkBranch(branchName)?.forkWorkspaceId;
+}
+
 /**
  * Find the .git directory in the workspace
  */
