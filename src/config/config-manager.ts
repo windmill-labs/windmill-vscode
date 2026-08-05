@@ -125,7 +125,10 @@ export function findCodebase(
         excluded = true;
       }
     }
-    return included && !excluded ? c : undefined;
+    // Keep looking through the remaining codebases, like the CLI's findCodebase
+    if (included && !excluded) {
+      return c;
+    }
   }
   return undefined;
 }
