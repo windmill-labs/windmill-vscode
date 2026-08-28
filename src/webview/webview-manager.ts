@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { getCurrentWorkspaceConfig } from "../workspace/workspace-manager";
+import { renderPreviewIframe } from "./preview-iframe";
 
 export function getWebviewContent(): string {
   let token: string;
@@ -44,7 +45,12 @@ export function getWebviewContent(): string {
     <div id="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 20px;">
       Loading ${currentWorkspace} on ${remoteUrl}dev...
     </div>
-    <iframe id="iframe" src="${remoteUrl}dev?wm_token=${token}&workspace=${workspace}&activeColorTheme=${vscode.window.activeColorTheme.kind}" width="100%" style="border: none; height: 100vh;"></iframe>
+    ${renderPreviewIframe({
+      remoteUrl,
+      token,
+      workspace,
+      themeKind: vscode.window.activeColorTheme.kind,
+    })}
     <script>
     const vscode = acquireVsCodeApi();
     const iframe = document.getElementById('iframe');

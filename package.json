@@ -62,6 +62,11 @@
         "command": "windmill.unpinPreview",
         "title": "Windmill: Unpin Preview To File",
         "category": "Windmill"
+      },
+      {
+        "command": "windmill.pasteIntoPreview",
+        "title": "Paste into preview",
+        "category": "Windmill"
       }
     ],
     "menus": {
@@ -81,6 +86,12 @@
       {
         "command": "windmill.runPreview",
         "key": "cmd+enter"
+      },
+      {
+        "command": "windmill.pasteIntoPreview",
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "when": "activeWebviewPanelId == 'windmill'"
       }
     ],
     "configuration": {

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { setWorkspaceStatus } from "../workspace/workspace-manager";
 import { getWebviewContent } from "../webview/webview-manager";
+import { pasteClipboardIntoWebview } from "../webview/clipboard-paste";
 
 export function registerCommands(
   context: vscode.ExtensionContext,
@@ -132,6 +133,19 @@ export function registerCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand("windmill.start", () => {
       start();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("windmill.pasteIntoPreview", async () => {
+      const panel = currentPanel();
+      if (panel === undefined) {
+        return;
+      }
+      await pasteClipboardIntoWebview(
+        panel.webview,
+        () => vscode.env.clipboard.readText()
+      );
     })
   );
 
